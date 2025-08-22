@@ -19,9 +19,9 @@ mod parser;
 #[derive(Parser, Debug)]
 #[command(name = "mango")]
 #[command(group(
-    ArgGroup::new("input")
+    ArgGroup::new("source")
         .required(true)
-        .args(["file", "repl"]),
+        .args(["input", "repl"]),
 ))]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -31,7 +31,7 @@ struct Cli {
     #[arg(short, long)]
     repl: bool,
 
-    #[arg(short, long, value_name = "OUTPUT", default_value = "out.nasm")]
+    #[arg(short, long, value_name = "OUTPUT", default_value = "out.masm")]
     output: String,
 }
 
