@@ -1,4 +1,4 @@
-use crate::lexer::Token;
+use crate::{lexer::Token, type_check::Type};
 use std::{error::Error, fmt::Display};
 
 #[derive(Debug)]
@@ -8,33 +8,94 @@ pub enum CompilerError<'ip> {
         got: Token<'ip>,
         expected: &'static str,
     },
+    UnexpectedType {
+        got: Type,
+        expected: &'static str,
+        token: Token<'ip>,
+    },
     UnexpectedEof,
-    RuntimeError(String),
+    OpTypeError {
+        op: Token<'ip>,
+        lhs: Option<Token<'ip>>,
+        rhs: Token<'ip>,
+    },
+    TypeError(String),
+    UndefinedIdentifier {
+        ident: Token<'ip>,
+    },
 }
 
 impl<'ip> Display for CompilerError<'ip> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnknownChar(ch) => write!(f, "LexerError: unknown character '{}'", ch),
-            Self::UnexpectedToken { got, expected } => {
-                write!(f, "Expected token '{:?}' found '{}'", got.kind, expected)
+            Self::UnknownChar(ch) => {
+                write!(f, "LexerError: unknown character '{}'", ch)
             }
-            Self::UnexpectedEof => write!(f, "Unexpected EOF"),
-            Self::RuntimeError(err) => write!(f, "Runtime Error: {}", err),
+
+            Self::UnexpectedToken { got, expected } => {
+                write!(
+                    f,
+                    "ParserError at {}: expected '{}' but found token '{:?}'",
+                    got.slice.get_row_col(),
+                    expected,
+                    got.kind
+                )
+            }
+
+            Self::UnexpectedType {
+                got,
+                expected,
+                token,
+            } => {
+                write!(
+                    f,
+                    "TypeError at {}: expected '{}' but found '{:?}'",
+                    token.slice.get_row_col(),
+                    expected,
+                    got
+                )
+            }
+
+            Self::UnexpectedEof => {
+                write!(f, "ParserError: unexpected end of file")
+            }
+
+            Self::TypeError(err) => {
+                write!(f, "TypeError: {}", err)
+            }
+
+            Self::OpTypeError { op, lhs, rhs } => {
+                if let Some(lhs) = lhs {
+                    write!(
+                        f,
+                        "TypeError at {}: cannot apply operator '{}' between types '{}' and '{}'",
+                        op.slice.get_row_col(),
+                        op.slice.get_str(),
+                        lhs.kind.type_name(),
+                        rhs.kind.type_name()
+                    )
+                } else {
+                    write!(
+                        f,
+                        "TypeError at {}: cannot apply operator '{}' to type '{}'",
+                        op.slice.get_row_col(),
+                        op.slice.get_str(),
+                        rhs.kind.type_name()
+                    )
+                }
+            }
+
+            Self::UndefinedIdentifier { ident } => {
+                write!(
+                    f,
+                    "NameError at {}: undefined identifier '{}'",
+                    ident.slice.get_row_col(),
+                    ident.slice.get_str()
+                )
+            }
         }
     }
 }
 
 impl<'ip> Error for CompilerError<'ip> {}
 pub type CompilerResult<'ip, T> = Result<T, CompilerError<'ip>>;
-
-#[derive(Debug)]
-pub struct RuntimeError(pub String);
-impl Display for RuntimeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RuntimeError: {}", self.0)
-    }
-}
-
-impl Error for RuntimeError {}
-pub type RuntimeResult<T> = Result<T, RuntimeError>;

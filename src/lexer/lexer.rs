@@ -1,63 +1,10 @@
+use crate::lexer::{Keyword, Slice, Token, TokenKind};
 use std::{
     iter::{Enumerate, Peekable},
     str::Chars,
 };
 
 use crate::error::{CompilerError, CompilerResult};
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum TokenKind {
-    Uint(u32),
-    // Float(f32),
-    // Bool(bool),
-    // Keyword(Keyword),
-    Identifier(String),
-    // String(String),
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    Eq,
-    Semicolon,
-    Lparen,
-    Rparen,
-}
-
-#[derive(Debug)]
-pub struct Slice<'ip> {
-    start: usize,
-    len: usize,
-    input: &'ip str,
-}
-
-impl<'ip> Slice<'ip> {
-    pub fn get_string(&self) -> &str {
-        if let Some(str) = self.input.get(self.start..self.start + self.len) {
-            str
-        } else {
-            "<unprintable>"
-        }
-    }
-}
-
-impl<'ip> Slice<'ip> {
-    pub fn new(start: usize, len: usize, input: &'ip str) -> Self {
-        Self { start, len, input }
-    }
-}
-
-#[derive(Debug)]
-pub struct Token<'ip> {
-    pub kind: TokenKind,
-    slice: Slice<'ip>,
-}
-
-impl<'ip> Token<'ip> {
-    pub fn new(kind: TokenKind, slice: Slice<'ip>) -> Self {
-        Self { kind, slice }
-    }
-}
-
 pub struct Lexer<'ip> {
     input: &'ip str,
     input_iter: Peekable<Enumerate<Chars<'ip>>>,
@@ -79,11 +26,13 @@ impl<'ip> Lexer<'ip> {
         let mut int = ((start_char as u8) - b'0') as u32;
         let mut len = 1;
         while let Some((_, ch)) = self.input_iter.next_if(|(_, ch)| ch.is_ascii_digit()) {
-            int = int * 10 + ((ch as u8) - b'0') as u32;
+            int = int
+                .wrapping_mul(10)
+                .wrapping_add(((ch as u8) - b'0') as u32);
             len += 1;
         }
 
-        (TokenKind::Uint(int), len)
+        (TokenKind::Int(int), len)
     }
 
     fn get_ident(&mut self, start_char: char) -> (TokenKind, usize) {
@@ -93,7 +42,26 @@ impl<'ip> Lexer<'ip> {
             ident.push(ch);
             len += 1;
         }
-        (TokenKind::Identifier(ident), len)
+
+        if ident == "true" || ident == "false" {
+            (TokenKind::Bool(ident == "true"), len)
+        } else if let Some(keyword) = Keyword::from_string(&ident) {
+            (TokenKind::Keyword(keyword), len)
+        } else {
+            (TokenKind::Identifier(ident.clone()), len)
+        }
+    }
+
+    fn get_twochar_tok(
+        &mut self,
+        second: (char, TokenKind),
+        fallback: TokenKind,
+    ) -> (TokenKind, usize) {
+        if let Some(_) = self.input_iter.next_if(|(_, ch)| ch == &second.0) {
+            (second.1, 2)
+        } else {
+            (fallback, 1)
+        }
     }
 }
 
@@ -102,17 +70,21 @@ impl<'ip> Iterator for Lexer<'ip> {
     fn next(&mut self) -> Option<Self::Item> {
         let (start, cur) = self.input_iter.next()?;
         let (kind, len) = match cur {
+            ';' | '\n' => (TokenKind::LineEnd, 1),
             '+' => (TokenKind::Plus, 1),
             '-' => (TokenKind::Minus, 1),
             '*' => (TokenKind::Star, 1),
             '/' => (TokenKind::Slash, 1),
-            ';' => (TokenKind::Semicolon, 1),
             '(' => (TokenKind::Lparen, 1),
             ')' => (TokenKind::Rparen, 1),
-            '=' => (TokenKind::Eq, 1),
+            ':' => (TokenKind::Colon, 1),
+            '=' => self.get_twochar_tok(('=', TokenKind::Eq), TokenKind::Assign),
+            '!' => self.get_twochar_tok(('=', TokenKind::Neq), TokenKind::Not),
+            '<' => self.get_twochar_tok(('=', TokenKind::Lte), TokenKind::Lt),
+            '>' => self.get_twochar_tok(('=', TokenKind::Gte), TokenKind::Gt),
             ws if ws.is_whitespace() => return self.next(),
             ch if ch.is_ascii_digit() => self.get_int(ch),
-            // ch if Self::is_ident(&ch, true) => self.get_ident(ch),
+            ch if Self::is_ident(&ch, true) => self.get_ident(ch),
             unknown => return Some(Err(CompilerError::UnknownChar(unknown))),
         };
 
