@@ -170,11 +170,10 @@ fn parse_atom<'ip>(lexer: &mut Peekable<Lexer<'ip>>) -> CompilerResult<'ip, Ast<
     // if lexer returns none, we have an unexpected EOF error
     let token = lexer.next().ok_or(CompilerError::UnexpectedEof)??;
     let node = match token.kind {
-        TokenKind::LineEnd => parse(lexer)?,
         TokenKind::Int(_) => Ast::Int(token),
         TokenKind::Identifier(_) => Ast::Identifier(token),
         TokenKind::Bool(_) => Ast::Bool(token),
-        TokenKind::Minus | TokenKind::Not => Ast::UnaryOp {
+        TokenKind::Minus | TokenKind::Not | TokenKind::Plus => Ast::UnaryOp {
             op: token,
             operand: Box::new(parse_atom(lexer)?),
         },

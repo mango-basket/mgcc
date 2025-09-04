@@ -218,3 +218,29 @@ pub fn gen_code(instrs: Vec<Instr>) -> String {
 
     code
 }
+
+pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
+    let mut code = Vec::new();
+
+    for instr in instrs {
+        code.extend(&match instr {
+            Instr::Push(num) => format!("PUSH {}", num),
+            Instr::Load(addr) => format!("LOAD {}", addr),
+            Instr::Store(addr) => format!("STOR {}", addr),
+            Instr::Halt => "HALT".into(),
+            Instr::Iadd => "IADD".into(),
+            Instr::Isub => "ISUB".into(),
+            Instr::Imul => "IMUL".into(),
+            Instr::Idiv => "IDIV".into(),
+            Instr::Neg => "NEG".into(),
+            Instr::Not => "NOT".into(),
+            Instr::Icmp => "ICMP".into(),
+            Instr::Jmp(ofst) => format!("JMP {}", ofst),
+            Instr::Jlt(ofst) => format!("JLT {}", ofst),
+            Instr::Jgt(ofst) => format!("JGT {}", ofst),
+            Instr::Jeq(ofst) => format!("JEQ {}", ofst),
+        });
+    }
+
+    code
+}
