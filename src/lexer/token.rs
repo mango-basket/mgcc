@@ -16,7 +16,7 @@ impl Keyword {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TokenKind {
-    Int(u32),
+    Int(u16),
     // Float(f32),
     Bool(bool),
     Keyword(Keyword),

@@ -23,12 +23,12 @@ impl<'ip> Lexer<'ip> {
     }
 
     fn get_int(&mut self, start_char: char) -> (TokenKind, usize) {
-        let mut int = ((start_char as u8) - b'0') as u32;
+        let mut int = ((start_char as u8) - b'0') as u16;
         let mut len = 1;
         while let Some((_, ch)) = self.input_iter.next_if(|(_, ch)| ch.is_ascii_digit()) {
             int = int
                 .wrapping_mul(10)
-                .wrapping_add(((ch as u8) - b'0') as u32);
+                .wrapping_add(((ch as u8) - b'0') as u16);
             len += 1;
         }
 
@@ -63,6 +63,20 @@ impl<'ip> Lexer<'ip> {
             (fallback, 1)
         }
     }
+
+    fn get_line_end(&mut self) -> usize {
+        let mut length = 1;
+        while let Some((_, cur)) = self.input_iter.peek() {
+            if ";\n".contains(*cur) {
+                length += 1;
+                self.input_iter.next();
+            } else {
+                break;
+            }
+        }
+
+        length
+    }
 }
 
 impl<'ip> Iterator for Lexer<'ip> {
@@ -70,7 +84,7 @@ impl<'ip> Iterator for Lexer<'ip> {
     fn next(&mut self) -> Option<Self::Item> {
         let (start, cur) = self.input_iter.next()?;
         let (kind, len) = match cur {
-            ';' | '\n' => (TokenKind::LineEnd, 1),
+            ';' | '\n' => (TokenKind::LineEnd, self.get_line_end()),
             '+' => (TokenKind::Plus, 1),
             '-' => (TokenKind::Minus, 1),
             '*' => (TokenKind::Star, 1),

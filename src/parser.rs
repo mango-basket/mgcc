@@ -131,10 +131,21 @@ fn parse_statement<'ip>(lexer: &mut Peekable<Lexer<'ip>>) -> CompilerResult<'ip,
                     rhs: Box::new(rhs),
                 })
             }
-            _ => parse_expression(lexer),
+            // bare expression statement
+            _ => {
+                let expr = parse_expression(lexer)?;
+                let lineend = lexer.next().ok_or(CompilerError::UnexpectedEof)??;
+                if !matches!(lineend.kind, TokenKind::LineEnd) {
+                    return Err(CompilerError::UnexpectedToken {
+                        got: lineend,
+                        expected: "line end",
+                    });
+                }
+                Ok(expr)
+            }
         }
     } else {
-        parse_expression(lexer)
+        Err(CompilerError::UnexpectedEof)
     }
 }
 
