@@ -61,7 +61,6 @@ fn infer_type<'ip>(
     match ast {
         Ast::Int(_) => Ok(Type::Int),
         Ast::Bool(_) => Ok(Type::Bool),
-
         Ast::UnaryOp { op, operand } => {
             let t = infer_type(operand, var_env, type_env)?;
             match (op.kind.clone(), t) {
@@ -74,7 +73,6 @@ fn infer_type<'ip>(
                 }),
             }
         }
-
         Ast::BinaryOp { left, op, right } => {
             let lt = infer_type(left, var_env, type_env)?;
             let rt = infer_type(right, var_env, type_env)?;
@@ -99,7 +97,6 @@ fn infer_type<'ip>(
                 }),
             }
         }
-
         Ast::Identifier(token) => {
             if let Some(t) = var_env.get(token.slice.get_str()) {
                 Ok(*t)
@@ -109,7 +106,6 @@ fn infer_type<'ip>(
                 })
             }
         }
-
         Ast::Assign { name, vartype, rhs } => {
             let rhs_ty = infer_type(rhs, var_env, type_env)?;
 
@@ -147,7 +143,25 @@ fn infer_type<'ip>(
             var_env.insert(name.slice.get_str().to_string(), final_ty);
             Ok(final_ty)
         }
+        Ast::Reassign { name, rhs } => {
+            let rhs_ty = infer_type(rhs, var_env, type_env)?;
+            let var_ty =
+                var_env
+                    .get(name.slice.get_str())
+                    .ok_or(CompilerError::UndefinedIdentifier {
+                        ident: name.clone(),
+                    })?;
 
+            if *var_ty != rhs_ty {
+                return Err(CompilerError::UnexpectedType {
+                    got: rhs_ty,
+                    expected: var_ty.to_str(),
+                    token: name.clone(),
+                });
+            }
+
+            Ok(*var_ty)
+        }
         Ast::Statements(stmts) => {
             let mut last_ty = Type::Unit; // you'll want to define Unit later maybe
             for stmt in stmts {

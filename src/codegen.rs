@@ -179,6 +179,20 @@ impl Compiler {
                     instrs.extend(self.gen_instrs(*ast)?);
                 }
             }
+            Ast::Reassign { name, rhs } => {
+                let slot = if let TokenKind::Identifier(ref ident) = name.kind {
+                    if let Some((slot, _ty)) = self.symbol_table.get(ident) {
+                        *slot
+                    } else {
+                        return Err(CompilerError::UndefinedIdentifier { ident: name });
+                    }
+                } else {
+                    unreachable!()
+                };
+
+                instrs.extend(self.gen_instrs(*rhs)?);
+                instrs.push(Instr::Store(slot));
+            }
         }
 
         Ok(instrs)

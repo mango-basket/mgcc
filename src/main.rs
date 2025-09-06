@@ -58,7 +58,7 @@ fn compile_source(
     dump_tokens: bool,
     dump_ast: bool,
 ) -> Result<OutputKind, String> {
-    let mut lexer = Lexer::new(code).peekable();
+    let mut lexer = Lexer::new(code);
 
     if dump_tokens {
         for tok in lexer.by_ref() {
@@ -67,7 +67,9 @@ fn compile_source(
         return Ok(OutputKind::Tokens);
     }
 
-    let ast = parser::parse(&mut lexer).map_err(|e| e.to_string())?;
+    let ast = parser::Parser::new(lexer)
+        .parse()
+        .map_err(|e| e.to_string())?;
 
     if dump_ast {
         println!("{:#?}", ast);
