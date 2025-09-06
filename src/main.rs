@@ -46,11 +46,50 @@ struct Cli {
     output: Option<String>,
 }
 
+enum OutputKind {
+    Bytes(Vec<u8>),
+    Tokens,
+    Ast,
+}
+
+fn compile_source(
+    code: &str,
+    emit_asm: bool,
+    dump_tokens: bool,
+    dump_ast: bool,
+) -> Result<OutputKind, String> {
+    let mut lexer = Lexer::new(code).peekable();
+
+    if dump_tokens {
+        for tok in lexer.by_ref() {
+            println!("{:?}", tok);
+        }
+        return Ok(OutputKind::Tokens);
+    }
+
+    let ast = parser::parse(&mut lexer).map_err(|e| e.to_string())?;
+
+    if dump_ast {
+        println!("{:#?}", ast);
+        return Ok(OutputKind::Ast);
+    }
+
+    let (ast, var_env) = check_types(ast).map_err(|e| e.to_string())?;
+    let instrs = gen_instrs(ast, var_env).map_err(|e| e.to_string())?;
+
+    if emit_asm {
+        Ok(OutputKind::Bytes(gen_asm(instrs).into_bytes()))
+    } else {
+        Ok(OutputKind::Bytes(gen_bin(instrs)))
+    }
+}
+
 fn run_repl(emit_asm: bool) -> io::Result<()> {
     loop {
-        let mut input = String::new();
         print!("> ");
         stdout().flush()?;
+
+        let mut input = String::new();
         stdin().read_line(&mut input)?;
         let input = input.trim();
 
@@ -58,18 +97,15 @@ fn run_repl(emit_asm: bool) -> io::Result<()> {
             break;
         }
 
-        match parser::parse(&mut Lexer::new(input).peekable())
-            .and_then(|ast| check_types(ast))
-            .and_then(|(ast, var_env)| gen_instrs(ast, var_env))
-        {
-            Ok(instrs) => {
+        match compile_source(input, emit_asm, false, false) {
+            Ok(OutputKind::Bytes(bytes)) => {
                 if emit_asm {
-                    println!("{}", gen_asm(instrs));
+                    println!("{}", String::from_utf8_lossy(&bytes));
                 } else {
-                    let bin = gen_bin(instrs);
-                    println!("{:02X?}", bin);
+                    println!("{:02X?}", bytes);
                 }
             }
+            Ok(OutputKind::Tokens) | Ok(OutputKind::Ast) => {}
             Err(err) => eprintln!("Error: {}", err),
         }
     }
@@ -83,37 +119,12 @@ fn compile_file(
     dump_tokens: bool,
     dump_ast: bool,
 ) -> io::Result<()> {
-    let mut code_file = File::open(filename)?;
     let mut code = String::new();
-    code_file.read_to_string(&mut code)?;
+    File::open(filename)?.read_to_string(&mut code)?;
 
-    let mut lexer = Lexer::new(&code).peekable();
-
-    if dump_tokens {
-        for tok in lexer.by_ref() {
-            println!("{:?}", tok);
-        }
-        return Ok(());
-    }
-
-    match parser::parse(&mut lexer)
-        .and_then(|ast| {
-            if dump_ast {
-                println!("{:#?}", ast);
-                return Ok((ast, Default::default())); // fake envs so typecheck doesn’t run
-            }
-            check_types(ast)
-        })
-        .and_then(|(ast, var_env)| gen_instrs(ast, var_env))
-    {
-        Ok(instrs) => {
-            let mut output = File::create(output_path)?;
-            if emit_asm {
-                output.write_all(gen_asm(instrs).as_bytes())?;
-            } else {
-                output.write_all(&gen_bin(instrs))?;
-            }
-        }
+    match compile_source(&code, emit_asm, dump_tokens, dump_ast) {
+        Ok(OutputKind::Bytes(bytes)) => File::create(output_path)?.write_all(&bytes)?,
+        Ok(OutputKind::Tokens) | Ok(OutputKind::Ast) => {}
         Err(err) => {
             eprintln!("Compilation failed: {}", err);
             process::exit(1);
@@ -126,22 +137,18 @@ fn compile_file(
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
 
-    let emit_asm = cli.asm;
-    let dump_tokens = cli.tokens;
-    let dump_ast = cli.ast;
-
     let output = cli.output.unwrap_or_else(|| {
-        if emit_asm {
-            "out.masm".to_string()
+        if cli.asm {
+            "out.masm".into()
         } else {
-            "out.mbin".to_string()
+            "out.mbin".into()
         }
     });
 
     if cli.repl {
-        run_repl(emit_asm)
+        run_repl(cli.asm)
     } else if let Some(filename) = cli.input {
-        compile_file(&filename, &output, emit_asm, dump_tokens, dump_ast)
+        compile_file(&filename, &output, cli.asm, cli.tokens, cli.ast)
     } else {
         Cli::command().print_help().unwrap();
         println!();
