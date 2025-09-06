@@ -21,7 +21,7 @@ pub enum Ast<'ip> {
     },
     Assign {
         name: Token<'ip>,
-        vartype: Token<'ip>,
+        vartype: Option<Token<'ip>>,
         rhs: Box<Ast<'ip>>,
     },
     Statements(Vec<Box<Ast<'ip>>>),
@@ -89,23 +89,25 @@ fn parse_statement<'ip>(lexer: &mut Peekable<Lexer<'ip>>) -> CompilerResult<'ip,
                     }
                 };
 
-                let colon = lexer.next().ok_or(CompilerError::UnexpectedEof)??;
-                if !matches!(colon.kind, TokenKind::Colon) {
-                    return Err(CompilerError::UnexpectedToken {
-                        got: colon,
-                        expected: ":",
-                    });
-                }
+                // look ahead for optional colon
+                let mut vartype = None;
+                if let Some(Ok(next)) = lexer.peek() {
+                    if matches!(next.kind, TokenKind::Colon) {
+                        let _ = lexer.next();
 
-                let vartype = match lexer.next().ok_or(CompilerError::UnexpectedEof)?? {
-                    tok if matches!(tok.kind, TokenKind::Identifier(_)) => tok,
-                    got => {
-                        return Err(CompilerError::UnexpectedToken {
-                            got,
-                            expected: "type identifier",
-                        })
+                        let t = match lexer.next().ok_or(CompilerError::UnexpectedEof)?? {
+                            tok if matches!(tok.kind, TokenKind::Identifier(_)) => tok,
+                            got => {
+                                return Err(CompilerError::UnexpectedToken {
+                                    got,
+                                    expected: "type identifier",
+                                })
+                            }
+                        };
+
+                        vartype = Some(t)
                     }
-                };
+                }
 
                 let eq = lexer.next().ok_or(CompilerError::UnexpectedEof)??;
                 if !matches!(eq.kind, TokenKind::Assign) {

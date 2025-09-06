@@ -11,7 +11,6 @@ pub enum Type {
     Int,
     Bool,
     Unit,
-    TypeName,
 }
 
 impl Type {
@@ -20,7 +19,6 @@ impl Type {
             Type::Int => "int",
             Type::Bool => "bool",
             Type::Unit => "unit",
-            Type::TypeName => "typename",
         }
     }
 }
@@ -40,17 +38,19 @@ pub type VarEnv = HashMap<String, Type>;
 
 // Identifiers and their types
 fn default_var_env() -> VarEnv {
-    let mut env: VarEnv = HashMap::new();
-    env.insert("int".to_string(), Type::TypeName);
-    env.insert("bool".to_string(), Type::TypeName);
-    env
+    // let mut env: VarEnv = HashMap::new();
+    // env.insert("int".to_string(), Type::TypeName);
+    // env.insert("bool".to_string(), Type::TypeName);
+    // env
+
+    HashMap::new()
 }
 
-pub fn check_types<'ip>(ast: Ast<'ip>) -> CompilerResult<'ip, (Ast<'ip>, TypeEnv, VarEnv)> {
+pub fn check_types<'ip>(ast: Ast<'ip>) -> CompilerResult<'ip, (Ast<'ip>, VarEnv)> {
     let mut var_env: VarEnv = default_var_env();
     let type_env = default_type_env(); // immutable
     let _ = infer_type(&ast, &mut var_env, &type_env)?;
-    Ok((ast, type_env, var_env))
+    Ok((ast, var_env))
 }
 
 fn infer_type<'ip>(
@@ -111,36 +111,41 @@ fn infer_type<'ip>(
         }
 
         Ast::Assign { name, vartype, rhs } => {
-            // declared type
-            let declared_ty = match &vartype.kind {
-                TokenKind::Identifier(ref s) => {
-                    if let Some(t) = type_env.get(s) {
-                        *t
-                    } else {
-                        return Err(CompilerError::TypeError(format!(
-                            "'{}' is not a known type",
-                            s
-                        )));
-                    }
-                }
-                _ => Err(CompilerError::UnexpectedToken {
-                    got: vartype.clone(),
-                    expected: "identifier",
-                })?,
-            };
-
             let rhs_ty = infer_type(rhs, var_env, type_env)?;
 
-            if declared_ty == rhs_ty {
-                var_env.insert(name.slice.get_str().to_string(), declared_ty);
-                Ok(declared_ty)
+            let final_ty = if let Some(vartype_tok) = vartype {
+                match &vartype_tok.kind {
+                    TokenKind::Identifier(ref s) => {
+                        if let Some(t) = type_env.get(s) {
+                            if *t == rhs_ty {
+                                *t
+                            } else {
+                                return Err(CompilerError::UnexpectedType {
+                                    got: rhs_ty,
+                                    expected: t.to_str(),
+                                    token: vartype_tok.clone(),
+                                });
+                            }
+                        } else {
+                            return Err(CompilerError::TypeError(format!(
+                                "'{}' is not a known type",
+                                s
+                            )));
+                        }
+                    }
+                    _ => {
+                        return Err(CompilerError::UnexpectedToken {
+                            got: vartype_tok.clone(),
+                            expected: "identifier",
+                        })
+                    }
+                }
             } else {
-                Err(CompilerError::UnexpectedType {
-                    got: rhs_ty,
-                    expected: declared_ty.to_str(),
-                    token: vartype.clone(),
-                })
-            }
+                rhs_ty
+            };
+
+            var_env.insert(name.slice.get_str().to_string(), final_ty);
+            Ok(final_ty)
         }
 
         Ast::Statements(stmts) => {

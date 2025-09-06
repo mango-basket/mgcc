@@ -60,7 +60,7 @@ fn run_repl(emit_asm: bool) -> io::Result<()> {
 
         match parser::parse(&mut Lexer::new(input).peekable())
             .and_then(|ast| check_types(ast))
-            .and_then(|(ast, type_env, var_env)| gen_instrs(ast, type_env, var_env))
+            .and_then(|(ast, var_env)| gen_instrs(ast, var_env))
         {
             Ok(instrs) => {
                 if emit_asm {
@@ -100,11 +100,11 @@ fn compile_file(
         .and_then(|ast| {
             if dump_ast {
                 println!("{:#?}", ast);
-                return Ok((ast, Default::default(), Default::default())); // fake envs so typecheck doesn’t run
+                return Ok((ast, Default::default())); // fake envs so typecheck doesn’t run
             }
             check_types(ast)
         })
-        .and_then(|(ast, type_env, var_env)| gen_instrs(ast, type_env, var_env))
+        .and_then(|(ast, var_env)| gen_instrs(ast, var_env))
     {
         Ok(instrs) => {
             let mut output = File::create(output_path)?;

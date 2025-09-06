@@ -4,7 +4,7 @@ use crate::{
     error::{CompilerError, CompilerResult},
     lexer::TokenKind,
     parser::Ast,
-    type_check::{Type, TypeEnv, VarEnv},
+    type_check::{Type, VarEnv},
 };
 
 pub enum Instr {
@@ -30,19 +30,13 @@ type SymbolTable = HashMap<String, (u8, Type)>;
 struct Compiler {
     symbol_table: SymbolTable,
     last_slot: u8,
-    type_env: TypeEnv,
     var_env: VarEnv,
 }
 
-pub fn gen_instrs<'ip>(
-    ast: Ast<'ip>,
-    type_env: TypeEnv,
-    var_env: VarEnv,
-) -> CompilerResult<'ip, Vec<Instr>> {
+pub fn gen_instrs<'ip>(ast: Ast<'ip>, var_env: VarEnv) -> CompilerResult<'ip, Vec<Instr>> {
     let mut compiler = Compiler {
         symbol_table: HashMap::new(),
         last_slot: 0,
-        type_env,
         var_env,
     };
 
@@ -143,8 +137,8 @@ impl Compiler {
             }
             Ast::Identifier(token) => {
                 if let TokenKind::Identifier(ref name) = token.kind {
-                    if let Some(addr) = self.symbol_table.get(name) {
-                        instrs.push(Instr::Load(addr.0));
+                    if let Some((slot, _ty)) = self.symbol_table.get(name) {
+                        instrs.push(Instr::Load(*slot));
                     } else {
                         return Err(CompilerError::UndefinedIdentifier { ident: token });
                     }
@@ -159,23 +153,22 @@ impl Compiler {
                     unreachable!()
                 }
             }
-            Ast::Assign { name, vartype, rhs } => {
-                // Assign a slot for it
-                let vartype = if let TokenKind::Identifier(name) = vartype.kind {
-                    match self.type_env.get(&name) {
-                        Some(t) => t,
-                        None => match self.var_env.get(&name) {
-                            Some(t) => t,
-                            None => unreachable!(),
-                        },
-                    }
-                } else {
-                    unreachable!()
-                };
-                self.symbol_table
-                    .insert(name.slice.get_str().to_string(), (self.last_slot, *vartype));
+            Ast::Assign {
+                name,
+                vartype: _,
+                rhs,
+            } => {
+                // look up type from var_env (guaranteed by typechecker)
+                let ty = *self
+                    .var_env
+                    .get(name.slice.get_str())
+                    .expect("typechecker ensures variables exist");
 
-                // Write the instructions for it
+                // assign a slot for it
+                self.symbol_table
+                    .insert(name.slice.get_str().to_string(), (self.last_slot, ty));
+
+                // generate code for rhs and store
                 instrs.extend(self.gen_instrs(*rhs)?);
                 instrs.push(Instr::Store(self.last_slot));
 
