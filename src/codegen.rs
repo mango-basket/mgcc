@@ -91,46 +91,46 @@ impl Compiler {
                     // Comparison
                     TokenKind::Eq => instrs.extend([
                         Instr::Icmp,
-                        Instr::Jeq(3),
+                        Instr::Jeq(5),
                         Instr::Push(0),
-                        Instr::Jmp(2),
+                        Instr::Jmp(3),
                         Instr::Push(1),
                     ]),
                     TokenKind::Neq => instrs.extend([
                         Instr::Icmp,
-                        Instr::Jeq(3),
+                        Instr::Jeq(5),
                         Instr::Push(1),
-                        Instr::Jmp(2),
+                        Instr::Jmp(3),
                         Instr::Push(0),
                     ]),
                     TokenKind::Gt => instrs.extend([
                         Instr::Icmp,
-                        Instr::Jgt(3),
+                        Instr::Jgt(5),
                         Instr::Push(0),
-                        Instr::Jmp(2),
+                        Instr::Jmp(3),
                         Instr::Push(1),
                     ]),
                     TokenKind::Lt => instrs.extend([
                         Instr::Icmp,
-                        Instr::Jlt(3),
+                        Instr::Jlt(5),
                         Instr::Push(0),
-                        Instr::Jmp(2),
+                        Instr::Jmp(3),
                         Instr::Push(1),
                     ]),
                     TokenKind::Gte => instrs.extend([
                         Instr::Icmp,
-                        Instr::Jeq(4),
-                        Instr::Jgt(3),
+                        Instr::Jeq(7),
+                        Instr::Jgt(5),
                         Instr::Push(0),
-                        Instr::Jmp(2),
+                        Instr::Jmp(3),
                         Instr::Push(1),
                     ]),
                     TokenKind::Lte => instrs.extend([
                         Instr::Icmp,
-                        Instr::Jlt(4),
-                        Instr::Jeq(3),
+                        Instr::Jlt(7),
+                        Instr::Jeq(5),
                         Instr::Push(0),
-                        Instr::Jmp(2),
+                        Instr::Jmp(3),
                         Instr::Push(1),
                     ]),
                     _ => {
@@ -225,7 +225,7 @@ pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
     for instr in instrs {
         code.extend(match instr {
             // Stack and control
-            Instr::Push(addr) => vec![0x01, (addr >> 8) as u8, (addr & 0xFF) as u8],
+            Instr::Push(addr) => vec![0x01, (addr & 0xFF) as u8, (addr >> 8) as u8], // LE
             Instr::Halt => vec![0x0F],
 
             // Memory
