@@ -249,7 +249,7 @@ impl<'ip> Parser<'ip> {
             self.next_if(|tok| matches!(tok.kind, TokenKind::Keyword(Keyword::If)))
         {
             // parse condition
-            let condition = self.parse_comparison()?;
+            let condition = self.parse_logic_or()?;
 
             // expect '{'
             expect_match!(self, TokenKind::Lbrace)?;
@@ -292,19 +292,43 @@ impl<'ip> Parser<'ip> {
                 elsebody,
             })
         } else {
-            self.parse_comparison()
+            self.parse_logic_or()
         }
     }
 
-    fn parse_comparison(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_logic_or(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        self.parse_binary_op(&[TokenKind::Or], Self::parse_logic_and)
+    }
+
+    fn parse_logic_and(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        self.parse_binary_op(&[TokenKind::And], Self::parse_bit_or)
+    }
+
+    fn parse_bit_or(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        self.parse_binary_op(&[TokenKind::Bor], Self::parse_bit_xor)
+    }
+
+    fn parse_bit_xor(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        self.parse_binary_op(&[TokenKind::Xor], Self::parse_bit_and)
+    }
+
+    fn parse_bit_and(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        self.parse_binary_op(&[TokenKind::Band], Self::parse_equality)
+    }
+
+    fn parse_equality(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
         self.parse_binary_op(&[TokenKind::Eq, TokenKind::Neq], Self::parse_relational)
     }
 
     fn parse_relational(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
         self.parse_binary_op(
             &[TokenKind::Gt, TokenKind::Gte, TokenKind::Lt, TokenKind::Lte],
-            Self::parse_additive,
+            Self::parse_bit_shift,
         )
+    }
+
+    fn parse_bit_shift(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        self.parse_binary_op(&[TokenKind::Shl, TokenKind::Shr], Self::parse_additive)
     }
 
     fn parse_additive(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
@@ -324,12 +348,12 @@ impl<'ip> Parser<'ip> {
             TokenKind::Int(_) => Ast::Int(token),
             TokenKind::Identifier(_) => Ast::Identifier(token),
             TokenKind::Bool(_) => Ast::Bool(token),
-            TokenKind::Minus | TokenKind::Plus | TokenKind::Not => Ast::UnaryOp {
+            TokenKind::Minus | TokenKind::Plus | TokenKind::Not | TokenKind::Bnot => Ast::UnaryOp {
                 op: token,
                 operand: Box::new(self.parse_atom()?),
             },
             TokenKind::Lparen => {
-                let expr = self.parse_comparison()?;
+                let expr = self.parse_expression()?;
                 match self.next_token() {
                     Some(Ok(tok)) if matches!(tok.kind, TokenKind::Rparen) => expr,
                     Some(Ok(got)) => {

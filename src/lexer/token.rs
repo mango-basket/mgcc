@@ -30,6 +30,14 @@ pub enum TokenKind {
     Minus,
     Star,
     Slash,
+    And,
+    Or,
+    Band,
+    Bor,
+    Xor,
+    Bnot,
+    Shl,
+    Shr,
     Not,
     Gt,
     Gte,
@@ -47,33 +55,6 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
-    pub fn type_name(&self) -> &'static str {
-        match self {
-            TokenKind::Int(_) => "Int",
-            TokenKind::Bool(_) => "Bool",
-            TokenKind::Keyword(_) => "Keyword",
-            TokenKind::Identifier(_) => "Identifier",
-            TokenKind::Plus => "Plus",
-            TokenKind::Minus => "Minus",
-            TokenKind::Star => "Star",
-            TokenKind::Slash => "Slash",
-            TokenKind::Not => "Not",
-            TokenKind::Gt => "Gt",
-            TokenKind::Gte => "Gte",
-            TokenKind::Lt => "Lt",
-            TokenKind::Lte => "Lte",
-            TokenKind::Eq => "Eq",
-            TokenKind::Neq => "Neq",
-            TokenKind::Assign => "Assign",
-            TokenKind::Colon => "Colon",
-            TokenKind::LineEnd => "LineEnd",
-            TokenKind::Lparen => "LParen",
-            TokenKind::Rparen => "RParen",
-            TokenKind::Lbrace => "LBrace",
-            TokenKind::Rbrace => "RBrace",
-        }
-    }
-
     pub fn expected_name(&self) -> &'static str {
         match self {
             TokenKind::Eq => "==",
@@ -102,6 +83,14 @@ impl TokenKind {
                 Keyword::If => "if",
                 Keyword::Else => "else",
             },
+            TokenKind::And => "&&",
+            TokenKind::Or => "||",
+            TokenKind::Band => "&",
+            TokenKind::Bor => "|",
+            TokenKind::Xor => "^",
+            TokenKind::Bnot => "~",
+            TokenKind::Shl => "<<",
+            TokenKind::Shr => ">>",
         }
     }
 }

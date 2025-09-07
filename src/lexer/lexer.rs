@@ -54,14 +54,18 @@ impl<'ip> Lexer<'ip> {
 
     fn get_twochar_tok(
         &mut self,
-        second: (char, TokenKind),
+        seconds: &[(char, TokenKind)],
         fallback: TokenKind,
     ) -> (TokenKind, usize) {
-        if let Some(_) = self.input_iter.next_if(|(_, ch)| ch == &second.0) {
-            (second.1, 2)
-        } else {
-            (fallback, 1)
+        if let Some((_, ch)) = self.input_iter.peek() {
+            for (expected_char, kind) in seconds {
+                if ch == expected_char {
+                    self.input_iter.next(); // consume the matched char
+                    return (kind.clone(), 2);
+                }
+            }
         }
+        (fallback, 1)
     }
 
     fn get_line_end(&mut self) -> usize {
@@ -121,10 +125,20 @@ impl<'ip> Iterator for Lexer<'ip> {
             '{' => (TokenKind::Lbrace, 1),
             '}' => (TokenKind::Rbrace, 1),
             ':' => (TokenKind::Colon, 1),
-            '=' => self.get_twochar_tok(('=', TokenKind::Eq), TokenKind::Assign),
-            '!' => self.get_twochar_tok(('=', TokenKind::Neq), TokenKind::Not),
-            '<' => self.get_twochar_tok(('=', TokenKind::Lte), TokenKind::Lt),
-            '>' => self.get_twochar_tok(('=', TokenKind::Gte), TokenKind::Gt),
+            '^' => (TokenKind::Xor, 1),
+            '~' => (TokenKind::Bnot, 1),
+            '&' => self.get_twochar_tok(&[('&', TokenKind::And)], TokenKind::Band),
+            '|' => self.get_twochar_tok(&[('|', TokenKind::Or)], TokenKind::Bor),
+            '=' => self.get_twochar_tok(&[('=', TokenKind::Eq)], TokenKind::Assign),
+            '!' => self.get_twochar_tok(&[('=', TokenKind::Neq)], TokenKind::Not),
+            '<' => self.get_twochar_tok(
+                &[('=', TokenKind::Lte), ('<', TokenKind::Shl)],
+                TokenKind::Lt,
+            ),
+            '>' => self.get_twochar_tok(
+                &[('=', TokenKind::Gte), ('>', TokenKind::Shr)],
+                TokenKind::Gt,
+            ),
             ws if ws.is_whitespace() => return self.next(),
             ch if ch.is_ascii_digit() => self.get_int(ch),
             ch if Self::is_ident(&ch, true) => self.get_ident(ch),

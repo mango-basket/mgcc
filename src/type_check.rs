@@ -64,7 +64,9 @@ fn infer_type<'ip>(
         Ast::UnaryOp { op, operand } => {
             let t = infer_type(operand, var_env, type_env)?;
             match (op.kind.clone(), t) {
-                (TokenKind::Minus, Type::Int) | (TokenKind::Plus, Type::Int) => Ok(Type::Int),
+                (TokenKind::Minus, Type::Int)
+                | (TokenKind::Plus, Type::Int)
+                | (TokenKind::Xor, Type::Int) => Ok(Type::Int),
                 (TokenKind::Not, Type::Bool) => Ok(Type::Bool),
                 _ => Err(CompilerError::OpTypeError {
                     op: op.clone(),
@@ -78,17 +80,35 @@ fn infer_type<'ip>(
             let rt = infer_type(right, var_env, type_env)?;
 
             match (op.kind.clone(), lt, rt) {
+                // arithmetic
                 (TokenKind::Plus, Type::Int, Type::Int)
                 | (TokenKind::Minus, Type::Int, Type::Int)
                 | (TokenKind::Star, Type::Int, Type::Int)
                 | (TokenKind::Slash, Type::Int, Type::Int) => Ok(Type::Int),
 
+                // equality
                 (TokenKind::Eq, l, r) if l == r => Ok(Type::Bool),
                 (TokenKind::Neq, l, r) if l == r => Ok(Type::Bool),
+
+                // comparison
                 (TokenKind::Gt, Type::Int, Type::Int)
                 | (TokenKind::Gte, Type::Int, Type::Int)
                 | (TokenKind::Lt, Type::Int, Type::Int)
                 | (TokenKind::Lte, Type::Int, Type::Int) => Ok(Type::Bool),
+
+                // logical
+                (TokenKind::And, Type::Bool, Type::Bool)
+                | (TokenKind::Or, Type::Bool, Type::Bool) => Ok(Type::Bool),
+
+                // bitwise
+                (TokenKind::Band, Type::Int, Type::Int)
+                | (TokenKind::Bor, Type::Int, Type::Int)
+                | (TokenKind::Xor, Type::Int, Type::Int) => Ok(Type::Int),
+
+                // shifts (assuming single Bshft token)
+                (TokenKind::Shl, Type::Int, Type::Int) | (TokenKind::Shr, Type::Int, Type::Int) => {
+                    Ok(Type::Int)
+                }
 
                 _ => Err(CompilerError::OpTypeError {
                     op: op.clone(),

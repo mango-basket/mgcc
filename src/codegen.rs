@@ -8,6 +8,7 @@ use crate::{
 };
 
 pub enum Instr {
+    Halt,
     Push(u16),
     Load(u8),
     Store(u8),
@@ -21,8 +22,13 @@ pub enum Instr {
     Imul,
     Idiv,
     Neg,
+
     Not,
-    Halt,
+
+    And,
+    Or,
+    Xor,
+    Shft,
 
     // label pseudo instructions
     Lbl(usize),
@@ -35,8 +41,8 @@ pub enum Instr {
 impl Instr {
     fn byte_len(&self) -> usize {
         match self {
-            Instr::Push(_) => 3, // opcode + 2-byte immediate
-            Instr::Load(_) => 2, // opcode + 1-byte addr
+            Instr::Push(_) => 3,
+            Instr::Load(_) => 2,
             Instr::Store(_) => 2,
             Instr::Jmp(_) => 2,
             Instr::Jlt(_) => 2,
@@ -50,13 +56,15 @@ impl Instr {
             | Instr::Not
             | Instr::Icmp
             | Instr::Halt => 1,
-
-            // pseudo-instructions (labels don’t emit bytes)
             Instr::Lbl(_) => 0,
-            Instr::JmpLbl(_) => 2, // these will turn into a JMP8
+            Instr::JmpLbl(_) => 2,
             Instr::JltLbl(_) => 2,
             Instr::JgtLbl(_) => 2,
             Instr::JeqLbl(_) => 2,
+            Instr::And => 1,
+            Instr::Or => 1,
+            Instr::Shft => 1,
+            Instr::Xor => 1,
         }
     }
 }
@@ -157,7 +165,8 @@ impl Compiler {
                 match op.kind {
                     TokenKind::Plus => {}
                     TokenKind::Minus => instrs.push(Instr::Neg),
-                    TokenKind::Not => instrs.push(Instr::Not),
+                    TokenKind::Bnot => instrs.push(Instr::Not),
+                    TokenKind::Not => instrs.extend([Instr::Push(0), Instr::Icmp]),
                     _ => {
                         return Err(CompilerError::UnexpectedToken {
                             got: op,
@@ -184,6 +193,13 @@ impl Compiler {
                     | TokenKind::Gt
                     | TokenKind::Lte
                     | TokenKind::Gte => instrs.extend(self.gen_comparison(op.kind)),
+
+                    // Logical + bitwisw
+                    TokenKind::And | TokenKind::Band => instrs.push(Instr::And),
+                    TokenKind::Or | TokenKind::Bor => instrs.push(Instr::Or),
+                    TokenKind::Xor => instrs.push(Instr::Xor),
+                    TokenKind::Shl => instrs.extend([Instr::Neg, Instr::Shft]),
+                    TokenKind::Shr => instrs.push(Instr::Shft),
 
                     _ => {
                         return Err(CompilerError::UnexpectedToken {
@@ -311,6 +327,10 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::JltLbl(id) => format!("JLT LBL{}", id),
             Instr::JgtLbl(id) => format!("JGT LBL{}", id),
             Instr::JeqLbl(id) => format!("JEQ LBL{}", id),
+            Instr::And => "AND".into(),
+            Instr::Or => "OR".into(),
+            Instr::Xor => "XOR".into(),
+            Instr::Shft => "SHFT".into(),
         });
         code.push('\n');
     }
@@ -403,8 +423,12 @@ pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
             Instr::Neg => vec![0x34],
             Instr::Icmp => vec![0x35],
 
-            // Logical Ops
+            // Bitwise Ops
             Instr::Not => vec![0x40],
+            Instr::And => vec![0x41],
+            Instr::Or => vec![0x42],
+            Instr::Xor => vec![0x43],
+            Instr::Shft => vec![0x44],
 
             // Labels
             _ => unreachable!(),

@@ -68,19 +68,19 @@ impl<'ip> Display for CompilerError<'ip> {
                 if let Some(lhs) = lhs {
                     write!(
                         f,
-                        "TypeError at {}: cannot apply operator '{}' between types '{}' and '{}'",
+                        "TypeError at {}: cannot apply operator '{}' between '{}' and '{}'",
                         op.slice.get_row_col(),
                         op.slice.get_str(),
-                        lhs.kind.type_name(),
-                        rhs.kind.type_name()
+                        lhs.slice.get_str(),
+                        rhs.slice.get_str(),
                     )
                 } else {
                     write!(
                         f,
-                        "TypeError at {}: cannot apply operator '{}' to type '{}'",
+                        "TypeError at {}: cannot apply operator '{}' to '{}'",
                         op.slice.get_row_col(),
                         op.slice.get_str(),
-                        rhs.kind.type_name()
+                        rhs.slice.get_str(),
                     )
                 }
             }
