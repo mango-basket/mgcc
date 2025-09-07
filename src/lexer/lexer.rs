@@ -83,6 +83,33 @@ impl<'ip> Iterator for Lexer<'ip> {
     type Item = CompilerResult<'ip, Token<'ip>>;
     fn next(&mut self) -> Option<Self::Item> {
         let (start, cur) = self.input_iter.next()?;
+
+        // handle // comments
+        if cur == '/' {
+            if let Some((_, next_ch)) = self.input_iter.peek() {
+                if *next_ch == '/' {
+                    // consume the second '/'
+                    self.input_iter.next();
+
+                    // consume until end of line
+                    while let Some((_, ch)) = self.input_iter.next() {
+                        if ch == '\n' {
+                            break;
+                        }
+                    }
+
+                    // skip the comment and return next token
+                    return self.next();
+                }
+            }
+
+            // if not a comment, it's a normal slash token
+            return Some(Ok(Token::new(
+                TokenKind::Slash,
+                Slice::new(start, 1, self.input),
+            )));
+        }
+
         let (kind, len) = match cur {
             ';' | '\n' => (TokenKind::LineEnd, self.get_line_end()),
             '+' => (TokenKind::Plus, 1),
