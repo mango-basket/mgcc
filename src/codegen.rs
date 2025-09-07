@@ -23,6 +23,42 @@ pub enum Instr {
     Neg,
     Not,
     Halt,
+
+    // label pseudo instructions
+    Lbl(usize),
+    JmpLbl(usize),
+    JltLbl(usize),
+    JgtLbl(usize),
+    JeqLbl(usize),
+}
+
+impl Instr {
+    fn byte_len(&self) -> usize {
+        match self {
+            Instr::Push(_) => 3, // opcode + 2-byte immediate
+            Instr::Load(_) => 2, // opcode + 1-byte addr
+            Instr::Store(_) => 2,
+            Instr::Jmp(_) => 2,
+            Instr::Jlt(_) => 2,
+            Instr::Jgt(_) => 2,
+            Instr::Jeq(_) => 2,
+            Instr::Iadd
+            | Instr::Isub
+            | Instr::Imul
+            | Instr::Idiv
+            | Instr::Neg
+            | Instr::Not
+            | Instr::Icmp
+            | Instr::Halt => 1,
+
+            // pseudo-instructions (labels don’t emit bytes)
+            Instr::Lbl(_) => 0,
+            Instr::JmpLbl(_) => 2, // these will turn into a JMP8
+            Instr::JltLbl(_) => 2,
+            Instr::JgtLbl(_) => 2,
+            Instr::JeqLbl(_) => 2,
+        }
+    }
 }
 
 type SymbolTable = HashMap<String, (u8, Type)>;
@@ -31,6 +67,7 @@ struct Compiler {
     symbol_table: SymbolTable,
     last_slot: u8,
     var_env: VarEnv,
+    label_counter: usize,
 }
 
 pub fn gen_instrs<'ip>(ast: Ast<'ip>, var_env: VarEnv) -> CompilerResult<'ip, Vec<Instr>> {
@@ -38,6 +75,7 @@ pub fn gen_instrs<'ip>(ast: Ast<'ip>, var_env: VarEnv) -> CompilerResult<'ip, Ve
         symbol_table: HashMap::new(),
         last_slot: 0,
         var_env,
+        label_counter: 0,
     };
 
     let mut ret = compiler.gen_instrs(ast)?;
@@ -46,6 +84,44 @@ pub fn gen_instrs<'ip>(ast: Ast<'ip>, var_env: VarEnv) -> CompilerResult<'ip, Ve
 }
 
 impl Compiler {
+    fn next_label(&mut self) -> usize {
+        let id = self.label_counter;
+        self.label_counter += 1;
+        id
+    }
+
+    fn gen_comparison(&mut self, op: TokenKind) -> Vec<Instr> {
+        let mut instrs = Vec::new();
+        let lbl_false = self.next_label();
+        let lbl_end = self.next_label();
+
+        instrs.push(Instr::Icmp);
+
+        match op {
+            TokenKind::Eq => instrs.push(Instr::JeqLbl(lbl_false)),
+            TokenKind::Neq => instrs.push(Instr::JeqLbl(lbl_false)), // adjust logic
+            TokenKind::Gt => instrs.push(Instr::JgtLbl(lbl_false)),
+            TokenKind::Lt => instrs.push(Instr::JltLbl(lbl_false)),
+            TokenKind::Gte => {
+                instrs.push(Instr::JeqLbl(lbl_false));
+                instrs.push(Instr::JgtLbl(lbl_false));
+            }
+            TokenKind::Lte => {
+                instrs.push(Instr::JeqLbl(lbl_false));
+                instrs.push(Instr::JltLbl(lbl_false));
+            }
+            _ => unreachable!(),
+        }
+
+        instrs.push(Instr::Push(1)); // true
+        instrs.push(Instr::JmpLbl(lbl_end));
+        instrs.push(Instr::Lbl(lbl_false));
+        instrs.push(Instr::Push(0)); // false
+        instrs.push(Instr::Lbl(lbl_end));
+
+        instrs
+    }
+
     fn gen_instrs<'ip>(&mut self, ast: Ast<'ip>) -> CompilerResult<'ip, Vec<Instr>> {
         let mut instrs = Vec::new();
 
@@ -83,50 +159,13 @@ impl Compiler {
                     TokenKind::Slash => instrs.push(Instr::Idiv),
 
                     // Comparison
-                    TokenKind::Eq => instrs.extend([
-                        Instr::Icmp,
-                        Instr::Jeq(5),
-                        Instr::Push(0),
-                        Instr::Jmp(3),
-                        Instr::Push(1),
-                    ]),
-                    TokenKind::Neq => instrs.extend([
-                        Instr::Icmp,
-                        Instr::Jeq(5),
-                        Instr::Push(1),
-                        Instr::Jmp(3),
-                        Instr::Push(0),
-                    ]),
-                    TokenKind::Gt => instrs.extend([
-                        Instr::Icmp,
-                        Instr::Jgt(5),
-                        Instr::Push(0),
-                        Instr::Jmp(3),
-                        Instr::Push(1),
-                    ]),
-                    TokenKind::Lt => instrs.extend([
-                        Instr::Icmp,
-                        Instr::Jlt(5),
-                        Instr::Push(0),
-                        Instr::Jmp(3),
-                        Instr::Push(1),
-                    ]),
-                    TokenKind::Gte => instrs.extend([
-                        Instr::Icmp,
-                        Instr::Jeq(7),
-                        Instr::Jgt(5),
-                        Instr::Push(0),
-                        Instr::Jmp(3),
-                        Instr::Push(1),
-                    ]),
-                    TokenKind::Lte => instrs.extend([
-                        Instr::Icmp,
-                        Instr::Jlt(7),
-                        Instr::Jeq(5),
-                        Instr::Push(0),
-                        Instr::Jmp(3),
-                        Instr::Push(1),
-                    ]),
+                    TokenKind::Eq
+                    | TokenKind::Neq
+                    | TokenKind::Lt
+                    | TokenKind::Gt
+                    | TokenKind::Lte
+                    | TokenKind::Gte => instrs.extend(self.gen_comparison(op.kind)),
+
                     _ => {
                         return Err(CompilerError::UnexpectedToken {
                             got: op,
@@ -219,6 +258,11 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::Jlt(ofst) => format!("JLT8 {}", ofst),
             Instr::Jgt(ofst) => format!("JGT8 {}", ofst),
             Instr::Jeq(ofst) => format!("JEQ8 {}", ofst),
+            Instr::Lbl(id) => format!("LBL{}:", id),
+            Instr::JmpLbl(id) => format!("JMP LBL{}", id),
+            Instr::JltLbl(id) => format!("JLT LBL{}", id),
+            Instr::JgtLbl(id) => format!("JGT LBL{}", id),
+            Instr::JeqLbl(id) => format!("JEQ LBL{}", id),
         });
         code.push('\n');
     }
@@ -226,7 +270,65 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
     code
 }
 
+pub fn resolve_labels(instrs: Vec<Instr>) -> Vec<Instr> {
+    let mut offsets = HashMap::new();
+    let mut byte_pos = 0;
+
+    // first pass: record byte offsets of labels
+    for instr in &instrs {
+        match instr {
+            Instr::Lbl(id) => {
+                offsets.insert(*id, byte_pos);
+            }
+            _ => byte_pos += instr.byte_len(),
+        }
+    }
+
+    // second pass: generate real instructions with resolved offsets
+    let mut resolved = Vec::new();
+    byte_pos = 0;
+
+    for instr in instrs {
+        match instr {
+            Instr::Lbl(_) => {
+                // labels don't emit bytes
+            }
+            Instr::JmpLbl(id) => {
+                let target = offsets[&id];
+                let rel = target as isize - (byte_pos as isize + 2); // JMP8 is 2 bytes
+                resolved.push(Instr::Jmp(rel as i8));
+                byte_pos += 2;
+            }
+            Instr::JltLbl(id) => {
+                let target = offsets[&id];
+                let rel = target as isize - (byte_pos as isize + 2); // JLT8 is 2 bytes
+                resolved.push(Instr::Jlt(rel as i8));
+                byte_pos += 2;
+            }
+            Instr::JgtLbl(id) => {
+                let target = offsets[&id];
+                let rel = target as isize - (byte_pos as isize + 2);
+                resolved.push(Instr::Jgt(rel as i8));
+                byte_pos += 2;
+            }
+            Instr::JeqLbl(id) => {
+                let target = offsets[&id];
+                let rel = target as isize - (byte_pos as isize + 2);
+                resolved.push(Instr::Jeq(rel as i8));
+                byte_pos += 2;
+            }
+            other => {
+                byte_pos += other.byte_len();
+                resolved.push(other);
+            }
+        }
+    }
+
+    resolved
+}
+
 pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
+    let instrs = resolve_labels(instrs);
     let mut code = Vec::new();
 
     for instr in instrs {
@@ -255,6 +357,9 @@ pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
 
             // Logical Ops
             Instr::Not => todo!(),
+
+            // Labels
+            _ => unreachable!(),
         });
     }
 
