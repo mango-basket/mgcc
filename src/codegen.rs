@@ -92,31 +92,50 @@ impl Compiler {
 
     fn gen_comparison(&mut self, op: TokenKind) -> Vec<Instr> {
         let mut instrs = Vec::new();
-        let lbl_false = self.next_label();
+        let lbl_true = self.next_label();
         let lbl_end = self.next_label();
 
+        // compare left - right
         instrs.push(Instr::Icmp);
 
         match op {
-            TokenKind::Eq => instrs.push(Instr::JeqLbl(lbl_false)),
-            TokenKind::Neq => instrs.push(Instr::JeqLbl(lbl_false)), // adjust logic
-            TokenKind::Gt => instrs.push(Instr::JgtLbl(lbl_false)),
-            TokenKind::Lt => instrs.push(Instr::JltLbl(lbl_false)),
-            TokenKind::Gte => {
-                instrs.push(Instr::JeqLbl(lbl_false));
-                instrs.push(Instr::JgtLbl(lbl_false));
+            TokenKind::Eq => {
+                instrs.push(Instr::JeqLbl(lbl_true)); // equal → true
+            }
+            TokenKind::Neq => {
+                // not equal → jump to true if NOT zero
+                // easiest: jump if equal → skip true
+                instrs.push(Instr::JeqLbl(lbl_end));
+                instrs.push(Instr::JmpLbl(lbl_true));
+            }
+            TokenKind::Lt => {
+                instrs.push(Instr::JltLbl(lbl_true)); // < → true
+            }
+            TokenKind::Gt => {
+                instrs.push(Instr::JgtLbl(lbl_true)); // > → true
             }
             TokenKind::Lte => {
-                instrs.push(Instr::JeqLbl(lbl_false));
-                instrs.push(Instr::JltLbl(lbl_false));
+                // <= means not (>)
+                instrs.push(Instr::JgtLbl(lbl_end)); // if >, skip true
+                instrs.push(Instr::JmpLbl(lbl_true));
+            }
+            TokenKind::Gte => {
+                // >= means not (<)
+                instrs.push(Instr::JltLbl(lbl_end)); // if <, skip true
+                instrs.push(Instr::JmpLbl(lbl_true));
             }
             _ => unreachable!(),
         }
 
-        instrs.push(Instr::Push(1)); // true
+        // false branch
+        instrs.push(Instr::Push(0));
         instrs.push(Instr::JmpLbl(lbl_end));
-        instrs.push(Instr::Lbl(lbl_false));
-        instrs.push(Instr::Push(0)); // false
+
+        // true branch
+        instrs.push(Instr::Lbl(lbl_true));
+        instrs.push(Instr::Push(1));
+
+        // end
         instrs.push(Instr::Lbl(lbl_end));
 
         instrs
@@ -356,7 +375,7 @@ pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
             Instr::Icmp => vec![0x35],
 
             // Logical Ops
-            Instr::Not => todo!(),
+            Instr::Not => vec![0x40],
 
             // Labels
             _ => unreachable!(),
