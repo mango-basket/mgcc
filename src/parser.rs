@@ -5,6 +5,31 @@ use crate::{
     lexer::{Keyword, Lexer, Token, TokenKind},
 };
 
+macro_rules! expect_match {
+    // with explicit expected
+    ($parser:expr, $($pats:pat_param)|+ , $expected:expr) => {{
+        let tok = $parser.next_token().ok_or(CompilerError::UnexpectedEof)??;
+        if matches!(tok.kind, $($pats)|+) {
+            Ok(tok)
+        } else {
+            Err(CompilerError::UnexpectedToken { got: tok, expected: $expected })
+        }
+    }};
+
+    // auto-generate expected
+    ($parser:expr, $($pats:pat_param)|+) => {{
+        let tok = $parser.next_token().ok_or(CompilerError::UnexpectedEof)??;
+        if matches!(tok.kind, $($pats)|+) {
+            Ok(tok)
+        } else {
+            Err(CompilerError::UnexpectedToken {
+                got: tok.clone(),
+                expected: tok.kind.expected_name(), // <- call it on the actual token
+            })
+        }
+    }};
+}
+
 #[derive(Debug)]
 pub enum Ast<'ip> {
     Identifier(Token<'ip>),
@@ -29,6 +54,11 @@ pub enum Ast<'ip> {
         rhs: Box<Ast<'ip>>,
     },
     Statements(Vec<Box<Ast<'ip>>>),
+    IfElse {
+        condition: Box<Ast<'ip>>,
+        ifbody: Box<Ast<'ip>>,
+        elsebody: Option<Box<Ast<'ip>>>,
+    },
 }
 
 pub struct Parser<'ip> {
@@ -77,35 +107,29 @@ impl<'ip> Parser<'ip> {
         self.peek_n(0)
     }
 
-    fn expect_line_end(&mut self) -> CompilerResult<'ip, ()> {
-        let tok = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
-        if !matches!(tok.kind, TokenKind::LineEnd) {
-            return Err(CompilerError::UnexpectedToken {
-                got: tok,
-                expected: "line end",
-            });
-        }
-        Ok(())
-    }
-
     // -- Parse functions --
 
     pub fn parse(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
-        self.parse_statements()
+        self.parse_statements(None)
     }
 
-    fn parse_statements(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_statements(
+        &mut self,
+        end: Option<TokenKind>, // pass EOF at top-level, RBrace in a block
+    ) -> CompilerResult<'ip, Ast<'ip>> {
         let mut stmts = Vec::new();
 
-        while let Some(peek) = self.peek() {
-            match peek {
-                Ok(_) => {
-                    let stmt = self.parse_statement()?;
-                    stmts.push(Box::new(stmt));
+        loop {
+            match self.peek() {
+                None => {
+                    if end.is_none() {
+                        break; // hit eof at top-level
+                    } else {
+                        return Err(CompilerError::UnexpectedEof);
+                    }
                 }
-                Err(_) => {
-                    return Err(self.next_token().unwrap().unwrap_err());
-                }
+                Some(Ok(tok)) if Some(tok.clone().kind) == end => break, // stop at `}`
+                _ => stmts.push(Box::new(self.parse_statement()?)),
             }
         }
 
@@ -119,15 +143,7 @@ impl<'ip> Parser<'ip> {
                 TokenKind::Keyword(Keyword::Var) => {
                     let _ = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
 
-                    let name = match self.next_token().ok_or(CompilerError::UnexpectedEof)?? {
-                        tok if matches!(tok.kind, TokenKind::Identifier(_)) => tok,
-                        got => {
-                            return Err(CompilerError::UnexpectedToken {
-                                got,
-                                expected: "identifier",
-                            })
-                        }
-                    };
+                    let name = expect_match!(self, TokenKind::Identifier(_))?;
 
                     // look ahead for optional colon
                     let mut vartype = None;
@@ -136,30 +152,15 @@ impl<'ip> Parser<'ip> {
                             let _ = self.next_token();
 
                             let t =
-                                match self.next_token().ok_or(CompilerError::UnexpectedEof)?? {
-                                    tok if matches!(tok.kind, TokenKind::Identifier(_)) => tok,
-                                    got => {
-                                        return Err(CompilerError::UnexpectedToken {
-                                            got,
-                                            expected: "type identifier",
-                                        })
-                                    }
-                                };
+                                expect_match!(self, TokenKind::Identifier(_), "type identifier")?;
 
                             vartype = Some(t)
                         }
                     }
-
-                    let eq = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
-                    if !matches!(eq.kind, TokenKind::Assign) {
-                        return Err(CompilerError::UnexpectedToken {
-                            got: eq,
-                            expected: "=",
-                        });
-                    }
+                    expect_match!(self, TokenKind::Assign)?;
 
                     let rhs = self.parse_expression()?;
-                    self.expect_line_end()?;
+                    expect_match!(self, TokenKind::LineEnd)?;
 
                     Ok(Ast::Assign {
                         name,
@@ -174,14 +175,7 @@ impl<'ip> Parser<'ip> {
                     if let Some(Ok(next)) = self.peek_n(1) {
                         if matches!(next.kind, TokenKind::Assign) {
                             // consume identifier
-                            let name =
-                                match self.next_token().ok_or(CompilerError::UnexpectedEof)?? {
-                                    tok @ Token {
-                                        kind: TokenKind::Identifier(_),
-                                        ..
-                                    } => tok,
-                                    _ => unreachable!(),
-                                };
+                            let name = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
 
                             // consume '='
                             let _eq = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
@@ -189,7 +183,7 @@ impl<'ip> Parser<'ip> {
                             // parse RHS expression
                             let rhs = self.parse_expression()?;
 
-                            self.expect_line_end()?;
+                            expect_match!(self, TokenKind::LineEnd)?;
 
                             return Ok(Ast::Reassign {
                                 name,
@@ -199,14 +193,21 @@ impl<'ip> Parser<'ip> {
                     }
 
                     let expr = self.parse_expression()?;
-                    self.expect_line_end()?;
+                    expect_match!(self, TokenKind::LineEnd)?;
 
                     Ok(expr)
                 }
+                // If its a line end, skip that and get a new statement (for cases when newlinw
+                // follows { )
+                TokenKind::LineEnd => {
+                    let _ = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
+                    Ok(self.parse_statement()?)
+                }
+
                 // bare expression statement
                 _ => {
                     let expr = self.parse_expression()?;
-                    self.expect_line_end()?;
+                    expect_match!(self, TokenKind::LineEnd)?;
 
                     Ok(expr)
                 }
@@ -240,7 +241,59 @@ impl<'ip> Parser<'ip> {
     }
 
     fn parse_expression(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
-        self.parse_comparison()
+        self.parse_if_expr()
+    }
+
+    fn parse_if_expr(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        if let Some(Ok(_if_tok)) =
+            self.next_if(|tok| matches!(tok.kind, TokenKind::Keyword(Keyword::If)))
+        {
+            // parse condition
+            let condition = self.parse_comparison()?;
+
+            // expect '{'
+            expect_match!(self, TokenKind::Lbrace)?;
+
+            // parse if-body
+            let ifbody = self.parse_statements(Some(TokenKind::Rbrace))?;
+
+            // expect '}'
+            expect_match!(self, TokenKind::Rbrace)?;
+
+            // check for "else"
+            let elsebody = if let Some(Ok(_tok)) =
+                self.next_if(|tok| matches!(tok.kind, TokenKind::Keyword(Keyword::Else)))
+            {
+                // is it "else if ..." ?
+                if let Some(Ok(peek)) = self.peek() {
+                    if matches!(peek.kind, TokenKind::Keyword(Keyword::If)) {
+                        // recursively parse another if-expression
+                        Some(Box::new(self.parse_if_expr()?))
+                    } else {
+                        // plain else, expect '{'
+                        expect_match!(self, TokenKind::Lbrace)?;
+
+                        let else_stmts = self.parse_statements(Some(TokenKind::Rbrace))?;
+
+                        expect_match!(self, TokenKind::Rbrace)?;
+
+                        Some(Box::new(else_stmts))
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            Ok(Ast::IfElse {
+                condition: Box::new(condition),
+                ifbody: Box::new(ifbody),
+                elsebody,
+            })
+        } else {
+            self.parse_comparison()
+        }
     }
 
     fn parse_comparison(&mut self) -> CompilerResult<'ip, Ast<'ip>> {

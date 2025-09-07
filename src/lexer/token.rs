@@ -3,12 +3,16 @@ use std::fmt;
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Keyword {
     Var,
+    If,
+    Else,
 }
 
 impl Keyword {
     pub fn from_string(string: &str) -> Option<Keyword> {
         match string {
             "var" => Some(Self::Var),
+            "if" => Some(Self::If),
+            "else" => Some(Self::Else),
             _ => None,
         }
     }
@@ -38,6 +42,8 @@ pub enum TokenKind {
     LineEnd,
     Lparen,
     Rparen,
+    Lbrace,
+    Rbrace,
 }
 
 impl TokenKind {
@@ -63,6 +69,39 @@ impl TokenKind {
             TokenKind::LineEnd => "LineEnd",
             TokenKind::Lparen => "LParen",
             TokenKind::Rparen => "RParen",
+            TokenKind::Lbrace => "LBrace",
+            TokenKind::Rbrace => "RBrace",
+        }
+    }
+
+    pub fn expected_name(&self) -> &'static str {
+        match self {
+            TokenKind::Eq => "==",
+            TokenKind::Neq => "!=",
+            TokenKind::Lt => "<",
+            TokenKind::Gt => ">",
+            TokenKind::Lte => "<=",
+            TokenKind::Gte => ">=",
+            TokenKind::Assign => "=",
+            TokenKind::Plus => "+",
+            TokenKind::Minus => "-",
+            TokenKind::Star => "*",
+            TokenKind::Slash => "/",
+            TokenKind::Lparen => "(",
+            TokenKind::Rparen => ")",
+            TokenKind::Lbrace => "{",
+            TokenKind::Rbrace => "}",
+            TokenKind::Colon => ":",
+            TokenKind::LineEnd => "end of line",
+            TokenKind::Identifier(_) => "identifier",
+            TokenKind::Int(_) => "integer literal",
+            TokenKind::Bool(_) => "boolean literal",
+            TokenKind::Not => "!",
+            TokenKind::Keyword(k) => match k {
+                Keyword::Var => "var",
+                Keyword::If => "if",
+                Keyword::Else => "else",
+            },
         }
     }
 }

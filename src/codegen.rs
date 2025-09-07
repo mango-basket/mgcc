@@ -251,6 +251,35 @@ impl Compiler {
                 instrs.extend(self.gen_instrs(*rhs)?);
                 instrs.push(Instr::Store(slot));
             }
+            Ast::IfElse {
+                condition,
+                ifbody,
+                elsebody,
+            } => {
+                // generate code for condition
+                instrs.extend(self.gen_instrs(*condition)?);
+
+                let lbl_else = self.next_label();
+                let lbl_end = self.next_label();
+
+                // jump to else if condition is false (0)
+                instrs.extend([Instr::Push(0), Instr::Icmp, Instr::JeqLbl(lbl_else)]); // assuming 0 = false, 1 = true
+
+                // generate if-body
+                instrs.extend(self.gen_instrs(*ifbody)?);
+
+                // after if-body, jump to end
+                instrs.push(Instr::JmpLbl(lbl_end));
+
+                // else-body
+                instrs.push(Instr::Lbl(lbl_else));
+                if let Some(else_ast) = elsebody {
+                    instrs.extend(self.gen_instrs(*else_ast)?);
+                }
+
+                // end label
+                instrs.push(Instr::Lbl(lbl_end));
+            }
         }
 
         Ok(instrs)

@@ -91,6 +91,8 @@ impl<'ip> Iterator for Lexer<'ip> {
             '/' => (TokenKind::Slash, 1),
             '(' => (TokenKind::Lparen, 1),
             ')' => (TokenKind::Rparen, 1),
+            '{' => (TokenKind::Lbrace, 1),
+            '}' => (TokenKind::Rbrace, 1),
             ':' => (TokenKind::Colon, 1),
             '=' => self.get_twochar_tok(('=', TokenKind::Eq), TokenKind::Assign),
             '!' => self.get_twochar_tok(('=', TokenKind::Neq), TokenKind::Not),

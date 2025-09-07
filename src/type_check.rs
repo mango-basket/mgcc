@@ -169,6 +169,43 @@ fn infer_type<'ip>(
             }
             Ok(last_ty)
         }
+        Ast::IfElse {
+            condition,
+            ifbody,
+            elsebody,
+        } => {
+            // type-check condition
+            let cond_ty = infer_type(condition, var_env, type_env)?;
+            if cond_ty != Type::Bool {
+                return Err(CompilerError::UnexpectedType {
+                    got: cond_ty,
+                    expected: "bool",
+                    token: operand_token(condition).expect("condition should have a token"),
+                });
+            }
+
+            // type-check if-body
+            let if_ty = infer_type(ifbody, var_env, type_env)?;
+
+            // type-check else-body if present
+            let final_ty = if let Some(else_ast) = elsebody {
+                let else_ty = infer_type(else_ast, var_env, type_env)?;
+                // both branches must have the same type
+                if if_ty != else_ty {
+                    return Err(CompilerError::UnexpectedType {
+                        got: else_ty,
+                        expected: if_ty.to_str(),
+                        token: operand_token(else_ast).expect("else branch should have a token"),
+                    });
+                }
+                if_ty
+            } else {
+                // no else, type is unit
+                Type::Unit
+            };
+
+            Ok(final_ty)
+        }
     }
 }
 
