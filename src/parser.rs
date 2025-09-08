@@ -90,12 +90,7 @@ impl<'ip> Parser<'ip> {
         }
     }
 
-    pub fn parse(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
-        self.parse_statements(None)
-    }
-
-    // Helper functions
-    fn peek_n(&mut self, n: usize) -> Option<&CompilerResult<'ip, Token<'ip>>> {
+    pub fn peek_n(&mut self, n: usize) -> Option<&CompilerResult<'ip, Token<'ip>>> {
         while self.buffer.len() <= n {
             if let Some(tok) = self.lexer.next() {
                 self.buffer.push_back(tok);
@@ -106,7 +101,7 @@ impl<'ip> Parser<'ip> {
         self.buffer.get(n)
     }
 
-    fn next_token(&mut self) -> Option<CompilerResult<'ip, Token<'ip>>> {
+    pub fn next_token(&mut self) -> Option<CompilerResult<'ip, Token<'ip>>> {
         if let Some(tok) = self.buffer.pop_front() {
             Some(tok)
         } else {
@@ -114,7 +109,7 @@ impl<'ip> Parser<'ip> {
         }
     }
 
-    fn next_if<F>(&mut self, f: F) -> Option<CompilerResult<'ip, Token<'ip>>>
+    pub fn next_if<F>(&mut self, f: F) -> Option<CompilerResult<'ip, Token<'ip>>>
     where
         F: Fn(&Token<'ip>) -> bool,
     {
@@ -124,7 +119,7 @@ impl<'ip> Parser<'ip> {
         }
     }
 
-    fn peek(&mut self) -> Option<&CompilerResult<'ip, Token<'ip>>> {
+    pub fn peek(&mut self) -> Option<&CompilerResult<'ip, Token<'ip>>> {
         self.peek_n(0)
     }
 
@@ -133,7 +128,11 @@ impl<'ip> Parser<'ip> {
         Ok(())
     }
 
-    // Statement parsers
+    // -- Parse functions --
+
+    pub fn parse(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        self.parse_statements(None)
+    }
 
     fn parse_statements(
         &mut self,
@@ -156,38 +155,6 @@ impl<'ip> Parser<'ip> {
         }
 
         Ok(Ast::Statements(stmts))
-    }
-
-    fn parse_statement(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
-        if let Some(Ok(tok)) = self.peek() {
-            match &tok.kind {
-                TokenKind::Keyword(Keyword::Var) => self.parse_vardef(),
-                TokenKind::Identifier(_name) => self.parse_assign(),
-                TokenKind::Keyword(Keyword::Break) => self.parse_break_stmt(),
-                TokenKind::Keyword(Keyword::Continue) => {
-                    expect_match!(self, TokenKind::Keyword(Keyword::Continue))?;
-                    self.consume_line_end()?;
-                    Ok(Ast::Continue)
-                }
-
-                // If its a line end, skip that and get a new statement (for cases when newlinw
-                // follows { )
-                TokenKind::LineEnd => {
-                    let _ = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
-                    Ok(self.parse_statement()?)
-                }
-
-                // bare expression statement
-                _ => {
-                    let expr = self.parse_expression()?;
-                    self.consume_line_end()?;
-
-                    Ok(expr)
-                }
-            }
-        } else {
-            Err(CompilerError::UnexpectedEof)
-        }
     }
 
     fn parse_vardef(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
@@ -256,7 +223,37 @@ impl<'ip> Parser<'ip> {
         Ok(Ast::Break(expr))
     }
 
-    // Expression parsers
+    fn parse_statement(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        if let Some(Ok(tok)) = self.peek() {
+            match &tok.kind {
+                TokenKind::Keyword(Keyword::Var) => self.parse_vardef(),
+                TokenKind::Identifier(_name) => self.parse_assign(),
+                TokenKind::Keyword(Keyword::Break) => self.parse_break_stmt(),
+                TokenKind::Keyword(Keyword::Continue) => {
+                    expect_match!(self, TokenKind::Keyword(Keyword::Continue))?;
+                    self.consume_line_end()?;
+                    Ok(Ast::Continue)
+                }
+
+                // If its a line end, skip that and get a new statement (for cases when newlinw
+                // follows { )
+                TokenKind::LineEnd => {
+                    let _ = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
+                    Ok(self.parse_statement()?)
+                }
+
+                // bare expression statement
+                _ => {
+                    let expr = self.parse_expression()?;
+                    self.consume_line_end()?;
+
+                    Ok(expr)
+                }
+            }
+        } else {
+            Err(CompilerError::UnexpectedEof)
+        }
+    }
 
     fn parse_expression(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
         fn parse_level<'ip>(
@@ -343,12 +340,15 @@ impl<'ip> Parser<'ip> {
     }
 
     fn parse_if_expr(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        // parse condition
         let condition = self.parse_expression()?;
 
+        // parse if-body block
         expect_match!(self, TokenKind::Lbrace)?;
         let ifbody = self.parse_statements(Some(TokenKind::Rbrace))?;
         expect_match!(self, TokenKind::Rbrace)?;
 
+        // parse optional else / else if chain
         let elsebody = if let Some(_) =
             self.next_if(|tok| matches!(tok.kind, TokenKind::Keyword(Keyword::Else)))
         {
