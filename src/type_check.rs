@@ -38,11 +38,6 @@ pub type VarEnv = HashMap<String, Type>;
 
 // Identifiers and their types
 fn default_var_env() -> VarEnv {
-    // let mut env: VarEnv = HashMap::new();
-    // env.insert("int".to_string(), Type::TypeName);
-    // env.insert("bool".to_string(), Type::TypeName);
-    // env
-
     HashMap::new()
 }
 
@@ -75,11 +70,19 @@ impl TypeChecker {
                     | (TokenKind::Plus, Type::Int)
                     | (TokenKind::Xor, Type::Int) => Ok(Type::Int),
                     (TokenKind::Not, Type::Bool) => Ok(Type::Bool),
-                    _ => Err(CompilerError::OpTypeError {
-                        op: op.clone(),
-                        lhs: None,
-                        rhs: Self::operand_token(operand).expect("token expected"), // always will have
-                    }),
+                    _ => {
+                        let operand_token = Self::operand_token(operand).ok_or_else(|| {
+                            CompilerError::Semantic(
+                                "could not find token for unary operand".to_string(),
+                            )
+                        })?;
+
+                        Err(CompilerError::OpTypeError {
+                            op: op.clone(),
+                            lhs: None,
+                            rhs: operand_token,
+                        })
+                    }
                 }
             }
             Ast::BinaryOp { left, op, right } => {
@@ -112,15 +115,28 @@ impl TypeChecker {
                     | (TokenKind::Bor, Type::Int, Type::Int)
                     | (TokenKind::Xor, Type::Int, Type::Int) => Ok(Type::Int),
 
-                    // shifts (assuming single Bshft token)
+                    // shifts
                     (TokenKind::Shl, Type::Int, Type::Int)
                     | (TokenKind::Shr, Type::Int, Type::Int) => Ok(Type::Int),
 
-                    _ => Err(CompilerError::OpTypeError {
-                        op: op.clone(),
-                        lhs: Some(Self::left_token(left).expect("token expected")),
-                        rhs: Self::right_token(right).expect("token expected"),
-                    }),
+                    _ => {
+                        let lhs_token = Self::left_token(left).ok_or_else(|| {
+                            CompilerError::Semantic(
+                                "could not find token for left operand".to_string(),
+                            )
+                        })?;
+                        let rhs_token = Self::right_token(right).ok_or_else(|| {
+                            CompilerError::Semantic(
+                                "could not find token for right operand".to_string(),
+                            )
+                        })?;
+
+                        Err(CompilerError::OpTypeError {
+                            op: op.clone(),
+                            lhs: Some(lhs_token),
+                            rhs: rhs_token,
+                        })
+                    }
                 }
             }
             Ast::Identifier(token) => {
@@ -158,7 +174,7 @@ impl TypeChecker {
                         _ => {
                             return Err(CompilerError::UnexpectedToken {
                                 got: vartype_tok.clone(),
-                                expected: "identifier",
+                                expected: "type identifier",
                             })
                         }
                     }
@@ -189,7 +205,7 @@ impl TypeChecker {
                 Ok(*var_ty)
             }
             Ast::Statements(stmts) => {
-                let mut last_ty = Type::Unit; // you'll want to define Unit later maybe
+                let mut last_ty = Type::Unit;
                 for stmt in stmts {
                     last_ty = self.infer_type(stmt)?;
                 }
@@ -203,11 +219,14 @@ impl TypeChecker {
                 // type-check condition
                 let cond_ty = self.infer_type(condition)?;
                 if cond_ty != Type::Bool {
+                    let condition_token = Self::operand_token(condition).ok_or_else(|| {
+                        CompilerError::Semantic("if condition has no associated token".to_string())
+                    })?;
+
                     return Err(CompilerError::UnexpectedType {
                         got: cond_ty,
                         expected: "bool",
-                        token: Self::operand_token(condition)
-                            .expect("condition should have a token"),
+                        token: condition_token,
                     });
                 }
 
@@ -220,17 +239,34 @@ impl TypeChecker {
 
                     // both branches must have the same type
                     if if_ty != else_ty {
+                        let else_token = Self::operand_token(else_ast).ok_or_else(|| {
+                            CompilerError::Semantic(
+                                "else branch has no associated token".to_string(),
+                            )
+                        })?;
+
                         return Err(CompilerError::UnexpectedType {
                             got: else_ty,
                             expected: if_ty.to_str(),
-                            token: Self::operand_token(else_ast)
-                                .expect("else branch should have a token"),
+                            token: else_token,
                         });
                     }
 
                     if_ty
                 } else {
-                    // no else, type is unit
+                    // no else branch - if body must have Unit type
+                    if if_ty != Type::Unit {
+                        let _if_token = Self::operand_token(ifbody).ok_or_else(|| {
+                            CompilerError::Semantic(
+                                "if body must return unit type without else".to_string(),
+                            )
+                        })?;
+
+                        return Err(CompilerError::TypeError(format!(
+                            "if expression without else branch must have unit type, but if branch has type {}. Add an else branch or change if branch to unit type.",
+                            if_ty.to_str()
+                        )));
+                    }
                     Type::Unit
                 };
 
@@ -244,7 +280,11 @@ impl TypeChecker {
                 let _ = self.infer_type(body)?;
 
                 // pop the frame and get the break type
-                let break_ty_opt = self.loop_stack.pop().expect("loop stack push/pop mismatch");
+                let break_ty_opt = self.loop_stack.pop().ok_or_else(|| {
+                    CompilerError::Semantic(
+                        "loop stack underflow - this indicates a compiler bug".to_string(),
+                    )
+                })?;
 
                 // loop type is either the break type or unit if no breaks
                 if let Some(ty) = break_ty_opt {
@@ -262,19 +302,25 @@ impl TypeChecker {
                     Type::Unit
                 };
 
-                // update loop frame if inside a loop
+                // update loop frame - we know it exists because we checked above
                 if let Some(top) = self.loop_stack.last_mut() {
                     match top {
                         None => *top = Some(this_ty),
                         Some(existing) => {
                             if *existing != this_ty {
                                 return Err(CompilerError::TypeError(format!(
-                                    "inconsistent break types in loop: {:?} vs {:?}",
-                                    existing, this_ty
+                                    "inconsistent break types in loop: expected {} but found {}",
+                                    existing.to_str(),
+                                    this_ty.to_str()
                                 )));
                             }
                         }
                     }
+                } else {
+                    // This should never happen because we checked in semantic_analysis.rs above
+                    return Err(CompilerError::Semantic(
+                        "loop stack is empty after non-empty check".to_string(),
+                    ));
                 }
 
                 // always return the type of the break expression

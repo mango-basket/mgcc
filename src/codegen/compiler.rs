@@ -1,96 +1,21 @@
 use std::collections::HashMap;
 
 use crate::{
+    codegen::Instr,
     error::{CompilerError, CompilerResult},
     lexer::TokenKind,
     parser::Ast,
     type_check::{Type, VarEnv},
 };
 
-pub enum Instr {
-    Halt,
-    Push(u16),
-    Load(u8),
-    Store(u8),
-    Icmp,
-    Jmp(i8),
-    Jlt(i8),
-    Jgt(i8),
-    Jeq(i8),
-    Iadd,
-    Isub,
-    Imul,
-    Idiv,
-    Neg,
-
-    Not,
-
-    And,
-    Or,
-    Xor,
-    Shft,
-
-    // label pseudo instructions
-    Lbl(usize),
-    JmpLbl(usize),
-    JltLbl(usize),
-    JgtLbl(usize),
-    JeqLbl(usize),
-}
-
-impl Instr {
-    fn byte_len(&self) -> usize {
-        match self {
-            Instr::Push(_) => 3,
-            Instr::Load(_) => 2,
-            Instr::Store(_) => 2,
-            Instr::Jmp(_) => 2,
-            Instr::Jlt(_) => 2,
-            Instr::Jgt(_) => 2,
-            Instr::Jeq(_) => 2,
-            Instr::Iadd
-            | Instr::Isub
-            | Instr::Imul
-            | Instr::Idiv
-            | Instr::Neg
-            | Instr::Not
-            | Instr::Icmp
-            | Instr::Halt => 1,
-            Instr::Lbl(_) => 0,
-            Instr::JmpLbl(_) => 2,
-            Instr::JltLbl(_) => 2,
-            Instr::JgtLbl(_) => 2,
-            Instr::JeqLbl(_) => 2,
-            Instr::And => 1,
-            Instr::Or => 1,
-            Instr::Shft => 1,
-            Instr::Xor => 1,
-        }
-    }
-}
-
 type SymbolTable = HashMap<String, (u8, Type)>;
 
-struct Compiler {
-    symbol_table: SymbolTable,
-    last_slot: u8,
-    var_env: VarEnv,
-    label_counter: usize,
-    loop_stack: Vec<(usize, usize)>, // (loop head, loop end)
-}
-
-pub fn gen_instrs<'ip>(ast: Ast<'ip>, var_env: VarEnv) -> CompilerResult<'ip, Vec<Instr>> {
-    let mut compiler = Compiler {
-        symbol_table: HashMap::new(),
-        last_slot: 0,
-        var_env,
-        label_counter: 0,
-        loop_stack: Vec::new(),
-    };
-
-    let mut ret = compiler.gen_instrs(ast)?;
-    ret.push(Instr::Halt);
-    Ok(ret)
+pub struct Compiler {
+    pub symbol_table: SymbolTable,
+    pub last_slot: u8,
+    pub var_env: VarEnv,
+    pub label_counter: usize,
+    pub loop_stack: Vec<(usize, usize)>, // (loop head, loop end)
 }
 
 impl Compiler {
@@ -151,7 +76,7 @@ impl Compiler {
         instrs
     }
 
-    fn gen_instrs<'ip>(&mut self, ast: Ast<'ip>) -> CompilerResult<'ip, Vec<Instr>> {
+    pub fn gen_instrs<'ip>(&mut self, ast: Ast<'ip>) -> CompilerResult<'ip, Vec<Instr>> {
         let mut instrs = Vec::new();
 
         match ast {
@@ -338,140 +263,4 @@ impl Compiler {
 
         Ok(instrs)
     }
-}
-
-pub fn gen_asm(instrs: Vec<Instr>) -> String {
-    let mut code = String::new();
-
-    for instr in instrs {
-        code.push_str(&match instr {
-            Instr::Push(num) => format!("PUSH16 {}", num),
-            Instr::Load(addr) => format!("LOAD8 {}", addr),
-            Instr::Store(addr) => format!("STORE8 {}", addr),
-            Instr::Halt => "HALT".into(),
-            Instr::Iadd => "IADD".into(),
-            Instr::Isub => "ISUB".into(),
-            Instr::Imul => "IMUL".into(),
-            Instr::Idiv => "IDIV".into(),
-            Instr::Neg => "NEG".into(),
-            Instr::Not => "NOT".into(),
-            Instr::Icmp => "ICMP".into(),
-            Instr::Jmp(ofst) => format!("JMP8 {}", ofst),
-            Instr::Jlt(ofst) => format!("JLT8 {}", ofst),
-            Instr::Jgt(ofst) => format!("JGT8 {}", ofst),
-            Instr::Jeq(ofst) => format!("JEQ8 {}", ofst),
-            Instr::Lbl(id) => format!("LBL{}:", id),
-            Instr::JmpLbl(id) => format!("JMP LBL{}", id),
-            Instr::JltLbl(id) => format!("JLT LBL{}", id),
-            Instr::JgtLbl(id) => format!("JGT LBL{}", id),
-            Instr::JeqLbl(id) => format!("JEQ LBL{}", id),
-            Instr::And => "AND".into(),
-            Instr::Or => "OR".into(),
-            Instr::Xor => "XOR".into(),
-            Instr::Shft => "SHFT".into(),
-        });
-        code.push('\n');
-    }
-
-    code
-}
-
-pub fn resolve_labels(instrs: Vec<Instr>) -> Vec<Instr> {
-    let mut offsets = HashMap::new();
-    let mut byte_pos = 0;
-
-    // first pass: record byte offsets of labels
-    for instr in &instrs {
-        match instr {
-            Instr::Lbl(id) => {
-                offsets.insert(*id, byte_pos);
-            }
-            _ => byte_pos += instr.byte_len(),
-        }
-    }
-
-    // second pass: generate real instructions with resolved offsets
-    let mut resolved = Vec::new();
-    byte_pos = 0;
-
-    for instr in instrs {
-        match instr {
-            Instr::Lbl(_) => {
-                // labels don't emit bytes
-            }
-            Instr::JmpLbl(id) => {
-                let target = offsets[&id];
-                let rel = target as isize - (byte_pos as isize + 2); // JMP8 is 2 bytes
-                resolved.push(Instr::Jmp(rel as i8));
-                byte_pos += 2;
-            }
-            Instr::JltLbl(id) => {
-                let target = offsets[&id];
-                let rel = target as isize - (byte_pos as isize + 2); // JLT8 is 2 bytes
-                resolved.push(Instr::Jlt(rel as i8));
-                byte_pos += 2;
-            }
-            Instr::JgtLbl(id) => {
-                let target = offsets[&id];
-                let rel = target as isize - (byte_pos as isize + 2);
-                resolved.push(Instr::Jgt(rel as i8));
-                byte_pos += 2;
-            }
-            Instr::JeqLbl(id) => {
-                let target = offsets[&id];
-                let rel = target as isize - (byte_pos as isize + 2);
-                resolved.push(Instr::Jeq(rel as i8));
-                byte_pos += 2;
-            }
-            other => {
-                byte_pos += other.byte_len();
-                resolved.push(other);
-            }
-        }
-    }
-
-    resolved
-}
-
-pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
-    let instrs = resolve_labels(instrs);
-    let mut code = Vec::new();
-
-    for instr in instrs {
-        code.extend(match instr {
-            // Stack and control
-            Instr::Push(addr) => vec![0x01, (addr & 0xFF) as u8, (addr >> 8) as u8], // LE
-            Instr::Halt => vec![0x0F],
-
-            // Memory
-            Instr::Load(addr) => vec![0x10, addr],
-            Instr::Store(addr) => vec![0x11, addr],
-
-            // Jumps and Branches
-            Instr::Jmp(addr) => vec![0x20, (addr as u8)],
-            Instr::Jlt(addr) => vec![0x21, (addr as u8)],
-            Instr::Jgt(addr) => vec![0x22, (addr as u8)],
-            Instr::Jeq(addr) => vec![0x23, (addr as u8)],
-
-            // Integer Arithmetic
-            Instr::Iadd => vec![0x30],
-            Instr::Isub => vec![0x31],
-            Instr::Imul => vec![0x32],
-            Instr::Idiv => vec![0x33],
-            Instr::Neg => vec![0x34],
-            Instr::Icmp => vec![0x35],
-
-            // Bitwise Ops
-            Instr::Not => vec![0x40],
-            Instr::And => vec![0x41],
-            Instr::Or => vec![0x42],
-            Instr::Xor => vec![0x43],
-            Instr::Shft => vec![0x44],
-
-            // Labels
-            _ => unreachable!(),
-        });
-    }
-
-    code
 }

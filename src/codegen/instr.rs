@@ -1,0 +1,61 @@
+pub enum Instr {
+    Halt,
+    Push(u16),
+    Load(u8),
+    Store(u8),
+    Icmp,
+    Jmp(i8),
+    Jlt(i8),
+    Jgt(i8),
+    Jeq(i8),
+    Iadd,
+    Isub,
+    Imul,
+    Idiv,
+    Neg,
+
+    Not,
+
+    And,
+    Or,
+    Xor,
+    Shft,
+
+    // label pseudo instructions
+    Lbl(usize),
+    JmpLbl(usize),
+    JltLbl(usize),
+    JgtLbl(usize),
+    JeqLbl(usize),
+}
+
+impl Instr {
+    pub fn byte_len(&self) -> usize {
+        match self {
+            Instr::Push(_) => 3,
+            Instr::Load(_) => 2,
+            Instr::Store(_) => 2,
+            Instr::Jmp(_) => 2,
+            Instr::Jlt(_) => 2,
+            Instr::Jgt(_) => 2,
+            Instr::Jeq(_) => 2,
+            Instr::Iadd
+            | Instr::Isub
+            | Instr::Imul
+            | Instr::Idiv
+            | Instr::Neg
+            | Instr::Not
+            | Instr::Icmp
+            | Instr::Halt => 1,
+            Instr::Lbl(_) => 0,
+            Instr::JmpLbl(_) => 2,
+            Instr::JltLbl(_) => 2,
+            Instr::JgtLbl(_) => 2,
+            Instr::JeqLbl(_) => 2,
+            Instr::And => 1,
+            Instr::Or => 1,
+            Instr::Shft => 1,
+            Instr::Xor => 1,
+        }
+    }
+}
