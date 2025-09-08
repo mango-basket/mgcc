@@ -23,6 +23,7 @@ pub enum CompilerError<'ip> {
     UndefinedIdentifier {
         ident: Token<'ip>,
     },
+    Semantic(String),
 }
 
 impl<'ip> Display for CompilerError<'ip> {
@@ -31,7 +32,6 @@ impl<'ip> Display for CompilerError<'ip> {
             Self::UnknownChar(ch) => {
                 write!(f, "LexerError: unknown character '{}'", ch)
             }
-
             Self::UnexpectedToken { got, expected } => {
                 write!(
                     f,
@@ -41,7 +41,6 @@ impl<'ip> Display for CompilerError<'ip> {
                     got.kind
                 )
             }
-
             Self::UnexpectedType {
                 got,
                 expected,
@@ -55,15 +54,12 @@ impl<'ip> Display for CompilerError<'ip> {
                     got
                 )
             }
-
             Self::UnexpectedEof => {
                 write!(f, "ParserError: unexpected end of file")
             }
-
             Self::TypeError(err) => {
                 write!(f, "TypeError: {}", err)
             }
-
             Self::OpTypeError { op, lhs, rhs } => {
                 if let Some(lhs) = lhs {
                     write!(
@@ -84,7 +80,6 @@ impl<'ip> Display for CompilerError<'ip> {
                     )
                 }
             }
-
             Self::UndefinedIdentifier { ident } => {
                 write!(
                     f,
@@ -93,6 +88,7 @@ impl<'ip> Display for CompilerError<'ip> {
                     ident.slice.get_str()
                 )
             }
+            CompilerError::Semantic(err) => write!(f, "Semantic Error: {}", err),
         }
     }
 }

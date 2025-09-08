@@ -5,6 +5,9 @@ pub enum Keyword {
     Var,
     If,
     Else,
+    Loop,
+    Break,
+    Continue,
 }
 
 impl Keyword {
@@ -13,6 +16,9 @@ impl Keyword {
             "var" => Some(Self::Var),
             "if" => Some(Self::If),
             "else" => Some(Self::Else),
+            "loop" => Some(Self::Loop),
+            "continue" => Some(Self::Continue),
+            "break" => Some(Self::Break),
             _ => None,
         }
     }
@@ -82,6 +88,9 @@ impl TokenKind {
                 Keyword::Var => "var",
                 Keyword::If => "if",
                 Keyword::Else => "else",
+                Keyword::Loop => "loop",
+                Keyword::Break => "break",
+                Keyword::Continue => "continue",
             },
             TokenKind::And => "&&",
             TokenKind::Or => "||",

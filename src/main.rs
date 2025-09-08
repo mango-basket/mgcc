@@ -8,6 +8,7 @@ mod codegen;
 mod error;
 mod lexer;
 mod parser;
+mod semantic_analyzer;
 mod type_check;
 
 use clap::{CommandFactory, Parser};
@@ -15,6 +16,7 @@ use lexer::Lexer;
 
 use crate::{
     codegen::{gen_asm, gen_bin, gen_instrs},
+    semantic_analyzer::check_semantics,
     type_check::check_types,
 };
 
@@ -77,6 +79,7 @@ fn compile_source(
     }
 
     let (ast, var_env) = check_types(ast).map_err(|e| e.to_string())?;
+    check_semantics(&ast).map_err(|e| e.to_string())?;
     let instrs = gen_instrs(ast, var_env).map_err(|e| e.to_string())?;
 
     if emit_asm {

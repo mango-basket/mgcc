@@ -76,6 +76,7 @@ struct Compiler {
     last_slot: u8,
     var_env: VarEnv,
     label_counter: usize,
+    loop_stack: Vec<(usize, usize)>, // (loop head, loop end)
 }
 
 pub fn gen_instrs<'ip>(ast: Ast<'ip>, var_env: VarEnv) -> CompilerResult<'ip, Vec<Instr>> {
@@ -84,6 +85,7 @@ pub fn gen_instrs<'ip>(ast: Ast<'ip>, var_env: VarEnv) -> CompilerResult<'ip, Ve
         last_slot: 0,
         var_env,
         label_counter: 0,
+        loop_stack: Vec::new(),
     };
 
     let mut ret = compiler.gen_instrs(ast)?;
@@ -227,7 +229,7 @@ impl Compiler {
                     unreachable!()
                 }
             }
-            Ast::Assign {
+            Ast::VarDef {
                 name,
                 vartype: _,
                 rhs,
@@ -295,6 +297,42 @@ impl Compiler {
 
                 // end label
                 instrs.push(Instr::Lbl(lbl_end));
+            }
+            Ast::Loop(body) => {
+                let head_lbl = self.next_label();
+                let end_lbl = self.next_label();
+
+                self.loop_stack.push((head_lbl, end_lbl));
+
+                instrs.push(Instr::Lbl(head_lbl));
+                instrs.extend(self.gen_instrs(*body)?);
+                instrs.extend([Instr::JmpLbl(head_lbl), Instr::Lbl(end_lbl)]);
+
+                self.loop_stack.pop();
+            }
+            Ast::Continue => instrs.push(Instr::JmpLbl(
+                self.loop_stack
+                    .last()
+                    .ok_or(
+                        CompilerError::Semantic("continue found outside loop (unreachable)".into()), // Shouldnt ever happen because of the semantic analyzer
+                    )?
+                    .0,
+            )),
+            Ast::Break(opt_expr) => {
+                if let Some(expr) = opt_expr {
+                    instrs.extend(self.gen_instrs(*expr)?);
+                };
+
+                instrs.push(Instr::JmpLbl(
+                    self.loop_stack
+                        .last()
+                        .ok_or(
+                            CompilerError::Semantic(
+                                "break found outside loop (unreachable)".into(),
+                            ), // Shouldnt ever happen because of the semantic analyzer
+                        )?
+                        .1,
+                ));
             }
         }
 
