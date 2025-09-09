@@ -35,19 +35,19 @@ impl Compiler {
 
         match op {
             TokenKind::Eq => {
-                instrs.push(Instr::JeqLbl(lbl_true)); // equal → true
+                instrs.push(Instr::JeqLbl(lbl_true)); // equal -> true
             }
             TokenKind::Neq => {
-                // not equal → jump to true if NOT zero
-                // easiest: jump if equal → skip true
+                // not equal -> jump to true if NOT zero
+                // easiest: jump if equal -> skip true
                 instrs.push(Instr::JeqLbl(lbl_end));
                 instrs.push(Instr::JmpLbl(lbl_true));
             }
             TokenKind::Lt => {
-                instrs.push(Instr::JltLbl(lbl_true)); // < → true
+                instrs.push(Instr::JltLbl(lbl_true)); // < -> true
             }
             TokenKind::Gt => {
-                instrs.push(Instr::JgtLbl(lbl_true)); // > → true
+                instrs.push(Instr::JgtLbl(lbl_true)); // > -> true
             }
             TokenKind::Lte => {
                 // <= means not (>)
