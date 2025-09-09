@@ -36,6 +36,9 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::Or => "OR".into(),
             Instr::Xor => "XOR".into(),
             Instr::Shft => "SHFT".into(),
+            Instr::Mov(rd, rs) => format!("MOV r{} r{}", rd, rs),
+            Instr::Pushr(rs) => format!("PUSHR r{}", rs),
+            Instr::Popr(rd) => format!("POPR r{}", rd),
         });
         code.push('\n');
     }
@@ -134,6 +137,11 @@ pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
             Instr::Or => vec![0x42],
             Instr::Xor => vec![0x43],
             Instr::Shft => vec![0x44],
+
+            // Register operations
+            Instr::Mov(rd, rs) => vec![0x50, (rd << 4) | rs],
+            Instr::Pushr(rs) => vec![0x51, rs],
+            Instr::Popr(rd) => vec![0x52, rd],
 
             // Labels
             _ => unreachable!(),

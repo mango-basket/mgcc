@@ -40,7 +40,7 @@ const PRECEDENCE: &[&[TokenKind]] = &[
     &[TokenKind::Gt, TokenKind::Gte, TokenKind::Lt, TokenKind::Lte],
     &[TokenKind::Shl, TokenKind::Shr],
     &[TokenKind::Plus, TokenKind::Minus],
-    &[TokenKind::Star, TokenKind::Slash],
+    &[TokenKind::Star, TokenKind::Slash, TokenKind::Mod],
 ];
 
 #[derive(Debug)]

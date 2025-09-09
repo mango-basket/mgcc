@@ -94,6 +94,7 @@ impl TypeChecker {
                     (TokenKind::Plus, Type::Int, Type::Int)
                     | (TokenKind::Minus, Type::Int, Type::Int)
                     | (TokenKind::Star, Type::Int, Type::Int)
+                    | (TokenKind::Mod, Type::Int, Type::Int)
                     | (TokenKind::Slash, Type::Int, Type::Int) => Ok(Type::Int),
 
                     // equality

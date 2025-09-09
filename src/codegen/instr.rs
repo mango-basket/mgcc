@@ -21,6 +21,10 @@ pub enum Instr {
     Xor,
     Shft,
 
+    Mov(u8, u8),
+    Pushr(u8),
+    Popr(u8),
+
     // label pseudo instructions
     Lbl(usize),
     JmpLbl(usize),
@@ -39,6 +43,9 @@ impl Instr {
             Instr::Jlt(_) => 2,
             Instr::Jgt(_) => 2,
             Instr::Jeq(_) => 2,
+            Instr::Mov(_, _) => 2,
+            Instr::Pushr(_) => 2,
+            Instr::Popr(_) => 2,
             Instr::Iadd
             | Instr::Isub
             | Instr::Imul

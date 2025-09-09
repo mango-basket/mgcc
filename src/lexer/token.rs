@@ -36,6 +36,7 @@ pub enum TokenKind {
     Minus,
     Star,
     Slash,
+    Mod,
     And,
     Or,
     Band,
@@ -100,6 +101,7 @@ impl TokenKind {
             TokenKind::Bnot => "~",
             TokenKind::Shl => "<<",
             TokenKind::Shr => ">>",
+            TokenKind::Mod => "%",
         }
     }
 }

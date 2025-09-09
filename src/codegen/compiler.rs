@@ -112,6 +112,17 @@ impl Compiler {
                     TokenKind::Minus => instrs.push(Instr::Isub),
                     TokenKind::Star => instrs.push(Instr::Imul),
                     TokenKind::Slash => instrs.push(Instr::Idiv),
+                    TokenKind::Mod => instrs.extend([
+                        Instr::Popr(1),
+                        Instr::Popr(0),
+                        Instr::Pushr(0),
+                        Instr::Pushr(0),
+                        Instr::Pushr(1),
+                        Instr::Idiv,
+                        Instr::Pushr(1),
+                        Instr::Imul,
+                        Instr::Isub,
+                    ]),
 
                     // Comparison
                     TokenKind::Eq
