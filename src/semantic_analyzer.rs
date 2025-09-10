@@ -25,21 +25,18 @@ impl SemanticChecker {
                 }
                 Ok(())
             }
-
             Ast::Loop(body) => {
                 self.loop_depth += 1;
                 self.check(body)?;
                 self.loop_depth -= 1;
                 Ok(())
             }
-
             Ast::Statements(stmts) => {
                 for stmt in stmts {
                     self.check(stmt)?;
                 }
                 Ok(())
             }
-
             Ast::IfElse {
                 condition: _,
                 ifbody,
@@ -51,15 +48,36 @@ impl SemanticChecker {
                 }
                 Ok(())
             }
-
             Ast::UnaryOp { operand, .. } => self.check(operand),
             Ast::BinaryOp { left, right, .. } => {
                 self.check(left)?;
                 self.check(right)
             }
 
-            Ast::VarDef { rhs, .. } | Ast::Reassign { rhs, .. } => self.check(rhs),
+            Ast::VarDef { rhs, .. } => self.check(rhs),
 
+            // check rhs, check lhs to be a valid deref or variable name
+            Ast::Reassign { lhs, rhs } => {
+                self.check(lhs)?;
+                self.check(rhs)?;
+
+                // If we have a deref we can be guaranteed that its a valid deref
+                match lhs.as_ref() {
+                    Ast::Identifier(_) | Ast::Deref(_) => Ok(()),
+                    _ => Err(CompilerError::Semantic(
+                        "invalid left-hand side in assignment".to_string(),
+                    )),
+                }
+            }
+            Ast::Ref(inner) => match inner.as_ref() {
+                Ast::Identifier(_) | Ast::Deref(_) => Ok(()),
+                Ast::Ref(inner2) => Ok(self.check(inner2)?),
+                _ => Err(CompilerError::Semantic(
+                    "cannot take reference of a temporary expression".to_string(),
+                )),
+            },
+
+            Ast::Deref(_) => Ok(()),
             Ast::Int(_) | Ast::Bool(_) | Ast::Identifier(_) => Ok(()),
         }
     }

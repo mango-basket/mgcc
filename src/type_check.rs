@@ -6,19 +6,21 @@ use crate::{
     parser::Ast,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
     Bool,
     Unit,
+    Ref(Box<Type>),
 }
 
 impl Type {
-    pub fn to_str(&self) -> &'static str {
+    pub fn to_str(&self) -> String {
         match self {
-            Type::Int => "int",
-            Type::Bool => "bool",
-            Type::Unit => "unit",
+            Type::Int => "int".to_string(),
+            Type::Bool => "bool".to_string(),
+            Type::Unit => "unit".to_string(),
+            Type::Ref(inner) => format!("ref {}", inner.to_str()),
         }
     }
 }
@@ -142,7 +144,7 @@ impl TypeChecker {
             }
             Ast::Identifier(token) => {
                 if let Some(t) = self.var_env.get(token.slice.get_str()) {
-                    Ok(*t)
+                    Ok(t.clone())
                 } else {
                     Err(CompilerError::UndefinedIdentifier {
                         ident: token.clone(),
@@ -152,58 +154,38 @@ impl TypeChecker {
             Ast::VarDef { name, vartype, rhs } => {
                 let rhs_ty = self.infer_type(rhs)?;
 
-                let final_ty = if let Some(vartype_tok) = vartype {
-                    match &vartype_tok.kind {
-                        TokenKind::Identifier(ref s) => {
-                            if let Some(t) = self.type_env.get(s) {
-                                if *t == rhs_ty {
-                                    *t
-                                } else {
-                                    return Err(CompilerError::UnexpectedType {
-                                        got: rhs_ty,
-                                        expected: t.to_str(),
-                                        token: vartype_tok.clone(),
-                                    });
-                                }
-                            } else {
-                                return Err(CompilerError::TypeError(format!(
-                                    "'{}' is not a known type",
-                                    s
-                                )));
-                            }
-                        }
-                        _ => {
-                            return Err(CompilerError::UnexpectedToken {
-                                got: vartype_tok.clone(),
-                                expected: "type identifier",
-                            })
-                        }
+                let final_ty = if let Some(vartype_ast) = vartype {
+                    let annotated_ty = self.ast_to_type(vartype_ast)?;
+                    if annotated_ty == rhs_ty {
+                        annotated_ty
+                    } else {
+                        return Err(CompilerError::UnexpectedType {
+                            got: rhs_ty,
+                            expected: annotated_ty.to_str(),
+                            slice: rhs.get_slice(),
+                        });
                     }
                 } else {
                     rhs_ty
                 };
 
                 self.var_env
-                    .insert(name.slice.get_str().to_string(), final_ty);
+                    .insert(name.slice.get_str().to_string(), final_ty.clone());
                 Ok(final_ty)
             }
-            Ast::Reassign { name, rhs } => {
+            Ast::Reassign { lhs, rhs } => {
                 let rhs_ty = self.infer_type(rhs)?;
-                let var_ty = self.var_env.get(name.slice.get_str()).ok_or(
-                    CompilerError::UndefinedIdentifier {
-                        ident: name.clone(),
-                    },
-                )?;
+                let var_ty = self.infer_type(lhs)?;
 
-                if *var_ty != rhs_ty {
+                if var_ty != rhs_ty {
                     return Err(CompilerError::UnexpectedType {
                         got: rhs_ty,
                         expected: var_ty.to_str(),
-                        token: name.clone(),
+                        slice: rhs.get_slice(),
                     });
                 }
 
-                Ok(*var_ty)
+                Ok(var_ty)
             }
             Ast::Statements(stmts) => {
                 let mut last_ty = Type::Unit;
@@ -220,14 +202,14 @@ impl TypeChecker {
                 // type-check condition
                 let cond_ty = self.infer_type(condition)?;
                 if cond_ty != Type::Bool {
-                    let condition_token = Self::operand_token(condition).ok_or_else(|| {
+                    let _condition_token = Self::operand_token(condition).ok_or_else(|| {
                         CompilerError::Semantic("if condition has no associated token".to_string())
                     })?;
 
                     return Err(CompilerError::UnexpectedType {
                         got: cond_ty,
-                        expected: "bool",
-                        token: condition_token,
+                        expected: "bool".into(),
+                        slice: condition.get_slice(),
                     });
                 }
 
@@ -240,7 +222,7 @@ impl TypeChecker {
 
                     // both branches must have the same type
                     if if_ty != else_ty {
-                        let else_token = Self::operand_token(else_ast).ok_or_else(|| {
+                        let _else_token = Self::operand_token(else_ast).ok_or_else(|| {
                             CompilerError::Semantic(
                                 "else branch has no associated token".to_string(),
                             )
@@ -249,7 +231,7 @@ impl TypeChecker {
                         return Err(CompilerError::UnexpectedType {
                             got: else_ty,
                             expected: if_ty.to_str(),
-                            token: else_token,
+                            slice: else_ast.get_slice(),
                         });
                     }
 
@@ -264,9 +246,9 @@ impl TypeChecker {
                         })?;
 
                         return Err(CompilerError::TypeError(format!(
-                            "if expression without else branch must have unit type, but if branch has type {}. Add an else branch or change if branch to unit type.",
-                            if_ty.to_str()
-                        )));
+                                    "if expression without else branch must have unit type, but if branch has type {}. Add an else branch or change if branch to unit type.",
+                                    if_ty.to_str()
+                                )));
                     }
                     Type::Unit
                 };
@@ -306,7 +288,7 @@ impl TypeChecker {
                 // update loop frame - we know it exists because we checked above
                 if let Some(top) = self.loop_stack.last_mut() {
                     match top {
-                        None => *top = Some(this_ty),
+                        None => *top = Some(this_ty.clone()),
                         Some(existing) => {
                             if *existing != this_ty {
                                 return Err(CompilerError::TypeError(format!(
@@ -327,6 +309,40 @@ impl TypeChecker {
                 // always return the type of the break expression
                 Ok(this_ty)
             }
+            Ast::Ref(ast) => Ok(Type::Ref(Box::new(self.infer_type(ast)?))),
+            Ast::Deref(ast) => {
+                let inner_ty = self.infer_type(ast)?;
+                if let Type::Ref(ty) = inner_ty {
+                    Ok(*ty)
+                } else {
+                    Err(CompilerError::TypeError(format!(
+                        "cannot dereference type {}",
+                        inner_ty.to_str()
+                    )))
+                }
+            }
+        }
+    }
+
+    fn ast_to_type<'ip>(&self, ast: &Ast<'ip>) -> CompilerResult<'ip, Type> {
+        match ast {
+            Ast::Identifier(name) => {
+                if let Some(t) = self.type_env.get(name.slice.get_str()) {
+                    Ok(t.clone())
+                } else {
+                    Err(CompilerError::TypeError(format!(
+                        "'{}' is not a known type",
+                        name.slice.get_str()
+                    )))
+                }
+            }
+            Ast::Ref(inner) => {
+                let inner_ty = self.ast_to_type(inner)?;
+                Ok(Type::Ref(Box::new(inner_ty)))
+            }
+            _ => Err(CompilerError::Semantic(
+                "invalid AST in type annotation".to_string(),
+            )),
         }
     }
 

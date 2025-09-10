@@ -2,29 +2,32 @@ use std::{collections::VecDeque, iter::Peekable};
 
 use crate::{
     error::{CompilerError, CompilerResult},
-    lexer::{Keyword, Lexer, Token, TokenKind},
+    lexer::{Keyword, Lexer, Slice, Token, TokenKind},
 };
 
 macro_rules! expect_match {
-    // with explicit expected
+    // with explicit expected string
     ($parser:expr, $($pats:pat_param)|+ , $expected:expr) => {{
         let tok = $parser.next_token().ok_or(CompilerError::UnexpectedEof)??;
         if matches!(tok.kind, $($pats)|+) {
             Ok(tok)
         } else {
-            Err(CompilerError::UnexpectedToken { got: tok, expected: $expected })
+            Err(CompilerError::UnexpectedToken {
+                got: tok,
+                expected: $expected,
+            })
         }
     }};
 
-    // auto-generate expected
-    ($parser:expr, $($pats:pat_param)|+) => {{
+    // auto-generate expected (take first pattern only)
+    ($parser:expr, $pat:pat_param $(| $rest:pat_param)*) => {{
         let tok = $parser.next_token().ok_or(CompilerError::UnexpectedEof)??;
-        if matches!(tok.kind, $($pats)|+) {
+        if matches!(tok.kind, $pat $(| $rest)*) {
             Ok(tok)
         } else {
             Err(CompilerError::UnexpectedToken {
-                got: tok.clone(),
-                expected: tok.kind.expected_name(), // <- call it on the actual token
+                got: tok,
+                expected: stringify!($pat), // fallback: pattern name
             })
         }
     }};
@@ -48,6 +51,8 @@ pub enum Ast<'ip> {
     Identifier(Token<'ip>),
     Int(Token<'ip>),
     Bool(Token<'ip>),
+    Ref(Box<Ast<'ip>>),
+    Deref(Box<Ast<'ip>>),
     UnaryOp {
         op: Token<'ip>,
         operand: Box<Ast<'ip>>,
@@ -59,11 +64,11 @@ pub enum Ast<'ip> {
     },
     VarDef {
         name: Token<'ip>,
-        vartype: Option<Token<'ip>>,
+        vartype: Option<Box<Ast<'ip>>>,
         rhs: Box<Ast<'ip>>,
     },
     Reassign {
-        name: Token<'ip>,
+        lhs: Box<Ast<'ip>>,
         rhs: Box<Ast<'ip>>,
     },
     Statements(Vec<Box<Ast<'ip>>>),
@@ -73,8 +78,82 @@ pub enum Ast<'ip> {
         elsebody: Option<Box<Ast<'ip>>>,
     },
     Loop(Box<Ast<'ip>>),
-    Continue,
     Break(Option<Box<Ast<'ip>>>),
+    Continue,
+}
+
+impl<'ip> Ast<'ip> {
+    pub fn get_slice(&self) -> Slice<'ip> {
+        match self {
+            Ast::Identifier(t) | Ast::Int(t) | Ast::Bool(t) => t.slice.clone(),
+
+            Ast::Ref(inner) | Ast::Deref(inner) | Ast::Loop(inner) => inner.get_slice(),
+
+            Ast::UnaryOp { op, operand } => {
+                let start = op.slice.start;
+                let end = operand.get_slice().start + operand.get_slice().len;
+                Slice::new(start, end - start, op.slice.input)
+            }
+
+            Ast::BinaryOp { left, op, right } => {
+                let start = left.get_slice().start;
+                let end = right.get_slice().start + right.get_slice().len;
+                Slice::new(start, end - start, op.slice.input)
+            }
+
+            Ast::VarDef {
+                name,
+                vartype: _,
+                rhs,
+            } => {
+                let start = name.slice.start;
+                let end = rhs.get_slice().start + rhs.get_slice().len;
+                Slice::new(start, end - start, name.slice.input)
+            }
+
+            Ast::Reassign { lhs, rhs } => {
+                let start = lhs.get_slice().start;
+                let end = rhs.get_slice().start + rhs.get_slice().len;
+                Slice::new(start, end - start, lhs.get_slice().input)
+            }
+
+            Ast::Statements(stmts) => {
+                if stmts.is_empty() {
+                    Slice::new(0, 0, "")
+                } else {
+                    let start = stmts.first().unwrap().get_slice().start;
+                    let last = stmts.last().unwrap().get_slice();
+                    let end = last.start + last.len;
+                    Slice::new(start, end - start, last.input)
+                }
+            }
+
+            Ast::IfElse {
+                condition,
+                ifbody,
+                elsebody,
+            } => {
+                let start = condition.get_slice().start;
+                let end = if let Some(else_ast) = elsebody {
+                    let s = else_ast.get_slice();
+                    s.start + s.len
+                } else {
+                    ifbody.get_slice().start + ifbody.get_slice().len
+                };
+                Slice::new(start, end - start, condition.get_slice().input)
+            }
+
+            Ast::Break(expr_opt) => {
+                if let Some(expr) = expr_opt {
+                    expr.get_slice()
+                } else {
+                    Slice::new(0, 0, "")
+                }
+            }
+
+            Ast::Continue => Slice::new(0, 0, ""),
+        }
+    }
 }
 
 pub struct Parser<'ip> {
@@ -157,6 +236,28 @@ impl<'ip> Parser<'ip> {
         Ok(Ast::Statements(stmts))
     }
 
+    fn parse_type(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        if let Some(Ok(tok)) = self.peek() {
+            match &tok.kind {
+                TokenKind::Ref => {
+                    let _ = self.next_token();
+                    let inner = self.parse_type()?;
+                    Ok(Ast::Ref(Box::new(inner)))
+                }
+                TokenKind::Identifier(_) => {
+                    let ident = expect_match!(self, TokenKind::Identifier(_))?;
+                    Ok(Ast::Identifier(ident))
+                }
+                _ => Err(CompilerError::UnexpectedToken {
+                    got: tok.clone(),
+                    expected: "type identifier",
+                }),
+            }
+        } else {
+            Err(CompilerError::UnexpectedEof)
+        }
+    }
+
     fn parse_vardef(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
         let _ = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
         let name = expect_match!(self, TokenKind::Identifier(_))?;
@@ -166,8 +267,8 @@ impl<'ip> Parser<'ip> {
         if let Some(Ok(next)) = self.peek() {
             if matches!(next.kind, TokenKind::Colon) {
                 let _ = self.next_token();
-                let t = expect_match!(self, TokenKind::Identifier(_), "type identifier")?;
-                vartype = Some(t)
+                let t = self.parse_type()?;
+                vartype = Some(Box::new(t))
             }
         }
         expect_match!(self, TokenKind::Assign)?;
@@ -182,26 +283,23 @@ impl<'ip> Parser<'ip> {
         })
     }
 
-    fn parse_assign(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
-        if let Some(Ok(next)) = self.peek_n(1) {
+    fn parse_reassign(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        let lhs = self.parse_unary()?;
+
+        if let Some(Ok(next)) = self.peek() {
             if matches!(next.kind, TokenKind::Assign) {
-                let name = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
                 let _eq = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
                 let rhs = self.parse_expression()?;
-
                 self.consume_line_end()?;
-
                 return Ok(Ast::Reassign {
-                    name,
+                    lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
                 });
             }
         }
 
-        let expr = self.parse_expression()?;
-        expect_match!(self, TokenKind::LineEnd)?;
-
-        Ok(expr)
+        self.consume_line_end()?;
+        Ok(lhs)
     }
 
     fn parse_break_stmt(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
@@ -227,7 +325,7 @@ impl<'ip> Parser<'ip> {
         if let Some(Ok(tok)) = self.peek() {
             match &tok.kind {
                 TokenKind::Keyword(Keyword::Var) => self.parse_vardef(),
-                TokenKind::Identifier(_name) => self.parse_assign(),
+                TokenKind::Identifier(_) | TokenKind::Star => self.parse_reassign(),
                 TokenKind::Keyword(Keyword::Break) => self.parse_break_stmt(),
                 TokenKind::Keyword(Keyword::Continue) => {
                     expect_match!(self, TokenKind::Keyword(Keyword::Continue))?;
@@ -297,20 +395,37 @@ impl<'ip> Parser<'ip> {
     fn parse_unary(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
         // Peek to see if next token is a unary operator (without consuming it)
         if let Some(Ok(tok_ref)) = self.peek() {
-            if matches!(
-                tok_ref.kind,
-                TokenKind::Minus | TokenKind::Plus | TokenKind::Not | TokenKind::Bnot
-            ) {
-                let op = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
-                let operand = self.parse_unary()?;
-                return Ok(Ast::UnaryOp {
-                    op,
-                    operand: Box::new(operand),
-                });
+            match tok_ref.kind {
+                TokenKind::Minus | TokenKind::Plus | TokenKind::Not | TokenKind::Bnot => {
+                    let op = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
+                    let operand = self.parse_unary()?;
+                    return Ok(Ast::UnaryOp {
+                        op,
+                        operand: Box::new(operand),
+                    });
+                }
+                TokenKind::Star => {
+                    let _ = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
+                    let operand = self.parse_unary()?;
+                    return Ok(Ast::Deref(Box::new(operand)));
+                }
+                _ => {}
             }
         }
 
         // Fallback
+        self.parse_ref()
+    }
+
+    fn parse_ref(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        if let Some(Ok(toke_ref)) = self.peek() {
+            if matches!(toke_ref.kind, TokenKind::Ref) {
+                let _ = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
+                let operand = self.parse_ref()?;
+                return Ok(Ast::Ref(Box::new(operand)));
+            }
+        }
+
         self.parse_atom()
     }
 
@@ -352,7 +467,11 @@ impl<'ip> Parser<'ip> {
         let elsebody = if let Some(_) =
             self.next_if(|tok| matches!(tok.kind, TokenKind::Keyword(Keyword::Else)))
         {
-            self.consume_line_end()?;
+            if let Some(Ok(peek)) = self.peek() {
+                if matches!(peek.kind, TokenKind::LineEnd) {
+                    self.consume_line_end()?;
+                }
+            }
 
             if let Some(Ok(peek)) = self.peek() {
                 if matches!(peek.kind, TokenKind::Keyword(Keyword::If)) {

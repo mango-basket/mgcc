@@ -37,6 +37,7 @@ pub enum TokenKind {
     Star,
     Slash,
     Mod,
+    Ref,
     And,
     Or,
     Band,
@@ -102,18 +103,23 @@ impl TokenKind {
             TokenKind::Shl => "<<",
             TokenKind::Shr => ">>",
             TokenKind::Mod => "%",
+            TokenKind::Ref => "@",
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Slice<'ip> {
-    start: usize,
-    len: usize,
-    input: &'ip str,
+    pub start: usize,
+    pub len: usize,
+    pub input: &'ip str,
 }
 
 impl<'ip> Slice<'ip> {
+    pub fn new(start: usize, len: usize, input: &'ip str) -> Self {
+        Self { start, len, input }
+    }
+
     pub fn get_str(&self) -> &str {
         if let Some(str) = self.input.get(self.start..self.start + self.len) {
             str
@@ -145,12 +151,6 @@ impl<'ip> Slice<'ip> {
 impl<'ip> fmt::Display for Slice<'ip> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "'{}' at {}", self.get_str(), self.get_row_col())
-    }
-}
-
-impl<'ip> Slice<'ip> {
-    pub fn new(start: usize, len: usize, input: &'ip str) -> Self {
-        Self { start, len, input }
     }
 }
 

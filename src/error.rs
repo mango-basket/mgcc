@@ -1,4 +1,7 @@
-use crate::{lexer::Token, type_check::Type};
+use crate::{
+    lexer::{Slice, Token},
+    type_check::Type,
+};
 use std::{error::Error, fmt::Display};
 
 #[derive(Debug)]
@@ -10,8 +13,8 @@ pub enum CompilerError<'ip> {
     },
     UnexpectedType {
         got: Type,
-        expected: &'static str,
-        token: Token<'ip>,
+        expected: String,
+        slice: Slice<'ip>,
     },
     UnexpectedEof,
     OpTypeError {
@@ -44,12 +47,12 @@ impl<'ip> Display for CompilerError<'ip> {
             Self::UnexpectedType {
                 got,
                 expected,
-                token,
+                slice,
             } => {
                 write!(
                     f,
                     "TypeError at {}: expected '{}' but found '{:?}'",
-                    token.slice.get_row_col(),
+                    slice.get_row_col(),
                     expected,
                     got
                 )

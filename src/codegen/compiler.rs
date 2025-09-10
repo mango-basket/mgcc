@@ -191,7 +191,7 @@ impl Compiler {
                     instrs.extend(self.gen_instrs(*ast)?);
                 }
             }
-            Ast::Reassign { name, rhs } => {
+            Ast::Reassign { lhs: name, rhs } => {
                 let slot = if let TokenKind::Identifier(ref ident) = name.kind {
                     if let Some((slot, _ty)) = self.symbol_table.get(ident) {
                         *slot

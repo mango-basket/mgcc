@@ -121,6 +121,7 @@ impl<'ip> Iterator for Lexer<'ip> {
             '*' => (TokenKind::Star, 1),
             '/' => (TokenKind::Slash, 1),
             '%' => (TokenKind::Mod, 1),
+            '@' => (TokenKind::Ref, 1),
             '(' => (TokenKind::Lparen, 1),
             ')' => (TokenKind::Rparen, 1),
             '{' => (TokenKind::Lbrace, 1),
