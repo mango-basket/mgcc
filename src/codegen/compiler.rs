@@ -313,7 +313,8 @@ impl Compiler {
             }
             Ast::Disp(printable) => {
                 instrs.extend(self.gen_instrs(printable)?);
-                instrs.push(Instr::CallLbl("print".into()))
+                instrs.push(Instr::Popr(0));
+                instrs.push(Instr::CallLbl("print".into())) // prints r0
             }
         }
 

@@ -62,26 +62,24 @@ fn get_print_object() -> Object {
     // temporarily hardcoding print
     let print_unsigned: Vec<Instr> = vec![
         Instr::Lbl("print".into()),
-        // pop number into r0
-        Instr::Popr(0),
-        // check zero
+        // check if r0 == 0
         Instr::Pushr(0),
         Instr::Push(0),
         Instr::Cmp,
         Instr::JeqLbl("print_zero".into()),
-        // loop: divide by 10, store remainder on stack
+        // loop: divide r0 by 10, store remainder
         Instr::Lbl("loop".into()),
         Instr::Pushr(0),
         Instr::Push(10),
         Instr::Div,
-        Instr::Popr(0), // quotient in r0
-        // remainder = old_num - quotient*10
+        Instr::Popr(0), // r0 = quotient
+        // remainder = old value - quotient*10
         Instr::Pushr(0),
         Instr::Push(10),
         Instr::Mul,
-        Instr::Pushr(1), // r1 stores original number
+        Instr::Pushr(2), // temporarily store old value in r2
         Instr::Sub,
-        Instr::Pushr(2), // r2 = remainder
+        Instr::Pushr(2), // remainder in r2
         Instr::Pushr(2),
         Instr::Push(0x30),
         Instr::Add,
@@ -90,7 +88,7 @@ fn get_print_object() -> Object {
         Instr::Pushr(0),
         Instr::Push(0),
         Instr::Cmp,
-        Instr::JeqLbl("print_digits".into()), // done dividing
+        Instr::JeqLbl("print_digits".into()),
         Instr::JmpLbl("loop".into()),
         // print digits from stack
         Instr::Lbl("print_digits".into()),
@@ -101,6 +99,7 @@ fn get_print_object() -> Object {
         Instr::Cmp,
         Instr::JeqLbl("end".into()),
         Instr::JmpLbl("print_digits".into()),
+        // handle zero
         Instr::Lbl("print_zero".into()),
         Instr::Push(0x30),
         Instr::Print,
