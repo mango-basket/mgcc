@@ -67,31 +67,36 @@ fn get_print_object() -> Object {
         Instr::Push(0),
         Instr::Cmp,
         Instr::JeqLbl("print_zero".into()),
-        // loop: divide r0 by 10, store remainder
+        // loop: extract digits and push to stack
         Instr::Lbl("loop".into()),
-        Instr::Pushr(0),
+        Instr::Pushr(0), // save current r0
+        Instr::Pushr(0), // save current r0
         Instr::Push(10),
-        Instr::Div,
-        Instr::Popr(0), // r0 = quotient
-        // remainder = old value - quotient*10
-        Instr::Pushr(0),
+        Instr::Div,      // quotient = r0 / 10
+        Instr::Popr(0),  // update r0 = quotient
+        Instr::Pushr(0), // push quotient * 10
         Instr::Push(10),
         Instr::Mul,
-        Instr::Pushr(2), // temporarily store old value in r2
-        Instr::Sub,
-        Instr::Pushr(2), // remainder in r2
-        Instr::Pushr(2),
+        Instr::Sub,      // remainder = old_value - quotient*10
+        Instr::Popr(1),  // remainder in r1
+        Instr::Pushr(1), // push remainder ascii to stack
         Instr::Push(0x30),
         Instr::Add,
-        Instr::Pushr(2), // push ascii digit to stack
-        // check if quotient != 0
+        Instr::Pushr(2),
+        Instr::Push(1),
+        Instr::Add,
+        Instr::Popr(2), // inc r2
+        // check if quotient != 0, else break
         Instr::Pushr(0),
         Instr::Push(0),
         Instr::Cmp,
         Instr::JeqLbl("print_digits".into()),
         Instr::JmpLbl("loop".into()),
-        // print digits from stack
+        // print digits from stack (now in correct order)
         Instr::Lbl("print_digits".into()),
+        Instr::Pushr(2),
+        Instr::Push(1),
+        Instr::Sub,
         Instr::Popr(2),
         Instr::Print,
         Instr::Pushr(2),
@@ -104,6 +109,9 @@ fn get_print_object() -> Object {
         Instr::Push(0x30),
         Instr::Print,
         Instr::Lbl("end".into()),
+        // Print newline
+        Instr::Push(10),
+        Instr::Print,
         Instr::Ret,
     ];
 
