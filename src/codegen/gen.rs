@@ -118,6 +118,8 @@ pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
             // Memory
             Instr::Load(addr) => vec![0x10, addr],
             Instr::Store(addr) => vec![0x11, addr],
+            Instr::Loadp => vec![0x12],
+            Instr::Storep => vec![0x13],
 
             // Jumps and Branches
             Instr::Jmp(addr) => vec![0x20, (addr as u8)],
