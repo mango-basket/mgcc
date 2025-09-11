@@ -78,9 +78,9 @@ fn compile_source(
         return Ok(OutputKind::Ast);
     }
 
-    let (ast, var_env) = check_types(ast).map_err(|e| e.to_string())?;
+    let var_env = check_types(&ast).map_err(|e| e.to_string())?;
     check_semantics(&ast).map_err(|e| e.to_string())?;
-    let instrs = gen_instrs(ast, var_env).map_err(|e| e.to_string())?;
+    let instrs = gen_instrs(&ast, var_env).map_err(|e| e.to_string())?;
 
     if emit_asm {
         Ok(OutputKind::Bytes(gen_asm(instrs).into_bytes()))

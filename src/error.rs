@@ -13,7 +13,6 @@ pub enum CompilerError<'ip> {
     UnexpectedToken {
         got: Token<'ip>,
         expected: &'static str,
-        slice: Slice<'ip>,
     },
     UnexpectedType {
         got: Type,
@@ -25,13 +24,9 @@ pub enum CompilerError<'ip> {
         op: Token<'ip>,
         lhs: Option<Token<'ip>>,
         rhs: Token<'ip>,
-        slice: Slice<'ip>,
     },
     TypeError(String, Slice<'ip>),
-    UndefinedIdentifier {
-        ident: Token<'ip>,
-        slice: Slice<'ip>,
-    },
+    UndefinedIdentifier(&'ip Token<'ip>),
     Semantic {
         err: String,
         slice: Slice<'ip>,
@@ -49,15 +44,11 @@ impl<'ip> Display for CompilerError<'ip> {
                     ch
                 )
             }
-            Self::UnexpectedToken {
-                got,
-                expected,
-                slice,
-            } => {
+            Self::UnexpectedToken { got, expected } => {
                 write!(
                     f,
                     "ParserError at {}: expected '{}' but found token '{:?}'",
-                    slice.get_row_col(),
+                    got.slice.get_row_col(),
                     expected,
                     got.kind
                 )
@@ -81,17 +72,12 @@ impl<'ip> Display for CompilerError<'ip> {
             Self::TypeError(err, slice) => {
                 write!(f, "TypeError at {}: {}", slice.get_row_col(), err)
             }
-            Self::OpTypeError {
-                op,
-                lhs,
-                rhs,
-                slice,
-            } => {
+            Self::OpTypeError { op, lhs, rhs } => {
                 if let Some(lhs) = lhs {
                     write!(
                         f,
                         "TypeError at {}: cannot apply operator '{}' between '{}' and '{}'",
-                        slice.get_row_col(),
+                        op.slice.get_row_col(),
                         op.slice.get_str(),
                         lhs.slice.get_str(),
                         rhs.slice.get_str(),
@@ -100,17 +86,17 @@ impl<'ip> Display for CompilerError<'ip> {
                     write!(
                         f,
                         "TypeError at {}: cannot apply operator '{}' to '{}'",
-                        slice.get_row_col(),
+                        op.slice.get_row_col(),
                         op.slice.get_str(),
                         rhs.slice.get_str(),
                     )
                 }
             }
-            Self::UndefinedIdentifier { ident, slice } => {
+            Self::UndefinedIdentifier(ident) => {
                 write!(
                     f,
                     "NameError at {}: undefined identifier '{}'",
-                    slice.get_row_col(),
+                    ident.slice.get_row_col(),
                     ident.slice.get_str()
                 )
             }

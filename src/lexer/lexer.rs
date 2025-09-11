@@ -144,7 +144,12 @@ impl<'ip> Iterator for Lexer<'ip> {
             ws if ws.is_whitespace() => return self.next(),
             ch if ch.is_ascii_digit() => self.get_int(ch),
             ch if Self::is_ident(&ch, true) => self.get_ident(ch),
-            unknown => return Some(Err(CompilerError::UnknownChar(unknown))),
+            unknown => {
+                return Some(Err(CompilerError::UnknownChar {
+                    ch: unknown,
+                    slice: Slice::new(start, 1, self.input),
+                }))
+            }
         };
 
         Some(Ok(Token::new(kind, Slice::new(start, len, self.input))))

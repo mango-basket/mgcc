@@ -155,7 +155,7 @@ pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
     code
 }
 
-pub fn gen_instrs<'ip>(ast: Ast<'ip>, var_env: VarEnv) -> CompilerResult<'ip, Vec<Instr>> {
+pub fn gen_instrs<'ip>(ast: &'ip Ast<'ip>, var_env: VarEnv) -> CompilerResult<'ip, Vec<Instr>> {
     let mut compiler = Compiler {
         symbol_table: HashMap::new(),
         last_slot: 0,

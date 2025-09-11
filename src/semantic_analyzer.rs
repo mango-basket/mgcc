@@ -19,9 +19,10 @@ impl SemanticChecker {
         match ast {
             Ast::Break(_) | Ast::Continue => {
                 if self.loop_depth == 0 {
-                    return Err(CompilerError::Semantic(
-                        "break/continue outside of loop".to_string(),
-                    ));
+                    return Err(CompilerError::Semantic {
+                        err: "break/continue outside of loop".to_string(),
+                        slice: ast.get_slice(),
+                    });
                 }
                 Ok(())
             }
@@ -64,17 +65,19 @@ impl SemanticChecker {
                 // If we have a deref we can be guaranteed that its a valid deref
                 match lhs.as_ref() {
                     Ast::Identifier(_) | Ast::Deref(_) => Ok(()),
-                    _ => Err(CompilerError::Semantic(
-                        "invalid left-hand side in assignment".to_string(),
-                    )),
+                    _ => Err(CompilerError::Semantic {
+                        err: "invalid left-hand side in assignment".to_string(),
+                        slice: lhs.get_slice(),
+                    }),
                 }
             }
             Ast::Ref(inner) => match inner.as_ref() {
                 Ast::Identifier(_) | Ast::Deref(_) => Ok(()),
                 Ast::Ref(inner2) => Ok(self.check(inner2)?),
-                _ => Err(CompilerError::Semantic(
-                    "cannot take reference of a temporary expression".to_string(),
-                )),
+                _ => Err(CompilerError::Semantic {
+                    err: "cannot take reference of a temporary expression".to_string(),
+                    slice: inner.get_slice(),
+                }),
             },
 
             Ast::Deref(_) => Ok(()),
