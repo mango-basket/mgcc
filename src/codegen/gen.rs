@@ -16,13 +16,13 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::Load(addr) => format!("LOAD8 {}", addr),
             Instr::Store(addr) => format!("STORE8 {}", addr),
             Instr::Halt => "HALT".into(),
-            Instr::Iadd => "IADD".into(),
-            Instr::Isub => "ISUB".into(),
-            Instr::Imul => "IMUL".into(),
-            Instr::Idiv => "IDIV".into(),
+            Instr::Add => "ADD".into(),
+            Instr::Sub => "SUB".into(),
+            Instr::Mul => "MUL".into(),
+            Instr::Div => "DIV".into(),
             Instr::Neg => "NEG".into(),
             Instr::Not => "NOT".into(),
-            Instr::Icmp => "ICMP".into(),
+            Instr::Cmp => "CMP".into(),
             Instr::Jmp(ofst) => format!("JMP8 {}", ofst),
             Instr::Jlt(ofst) => format!("JLT8 {}", ofst),
             Instr::Jgt(ofst) => format!("JGT8 {}", ofst),
@@ -39,6 +39,8 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::Mov(rd, rs) => format!("MOV r{} r{}", rd, rs),
             Instr::Pushr(rs) => format!("PUSHR r{}", rs),
             Instr::Popr(rd) => format!("POPR r{}", rd),
+            Instr::Loadp => "LOADP".into(),
+            Instr::Storep => "STOREP".into(),
         });
         code.push('\n');
     }
@@ -124,12 +126,12 @@ pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
             Instr::Jeq(addr) => vec![0x23, (addr as u8)],
 
             // Integer Arithmetic
-            Instr::Iadd => vec![0x30],
-            Instr::Isub => vec![0x31],
-            Instr::Imul => vec![0x32],
-            Instr::Idiv => vec![0x33],
+            Instr::Add => vec![0x30],
+            Instr::Sub => vec![0x31],
+            Instr::Mul => vec![0x32],
+            Instr::Div => vec![0x33],
             Instr::Neg => vec![0x34],
-            Instr::Icmp => vec![0x35],
+            Instr::Cmp => vec![0x35],
 
             // Bitwise Ops
             Instr::Not => vec![0x40],

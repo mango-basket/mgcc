@@ -63,56 +63,69 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
-    pub fn expected_name(&self) -> &'static str {
-        match self {
-            TokenKind::Eq => "==",
-            TokenKind::Neq => "!=",
-            TokenKind::Lt => "<",
-            TokenKind::Gt => ">",
-            TokenKind::Lte => "<=",
-            TokenKind::Gte => ">=",
-            TokenKind::Assign => "=",
-            TokenKind::Plus => "+",
-            TokenKind::Minus => "-",
-            TokenKind::Star => "*",
-            TokenKind::Slash => "/",
-            TokenKind::Lparen => "(",
-            TokenKind::Rparen => ")",
-            TokenKind::Lbrace => "{",
-            TokenKind::Rbrace => "}",
-            TokenKind::Colon => ":",
-            TokenKind::LineEnd => "end of line",
-            TokenKind::Identifier(_) => "identifier",
-            TokenKind::Int(_) => "integer literal",
-            TokenKind::Bool(_) => "boolean literal",
-            TokenKind::Not => "!",
-            TokenKind::Keyword(k) => match k {
-                Keyword::Var => "var",
-                Keyword::If => "if",
-                Keyword::Else => "else",
-                Keyword::Loop => "loop",
-                Keyword::Break => "break",
-                Keyword::Continue => "continue",
-            },
-            TokenKind::And => "&&",
-            TokenKind::Or => "||",
-            TokenKind::Band => "&",
-            TokenKind::Bor => "|",
-            TokenKind::Xor => "^",
-            TokenKind::Bnot => "~",
-            TokenKind::Shl => "<<",
-            TokenKind::Shr => ">>",
-            TokenKind::Mod => "%",
-            TokenKind::Ref => "@",
-        }
-    }
+    // pub fn expected_name(&self) -> &'static str {
+    //     match self {
+    //         TokenKind::Eq => "==",
+    //         TokenKind::Neq => "!=",
+    //         TokenKind::Lt => "<",
+    //         TokenKind::Gt => ">",
+    //         TokenKind::Lte => "<=",
+    //         TokenKind::Gte => ">=",
+    //         TokenKind::Assign => "=",
+    //         TokenKind::Plus => "+",
+    //         TokenKind::Minus => "-",
+    //         TokenKind::Star => "*",
+    //         TokenKind::Slash => "/",
+    //         TokenKind::Lparen => "(",
+    //         TokenKind::Rparen => ")",
+    //         TokenKind::Lbrace => "{",
+    //         TokenKind::Rbrace => "}",
+    //         TokenKind::Colon => ":",
+    //         TokenKind::LineEnd => "end of line",
+    //         TokenKind::Identifier(_) => "identifier",
+    //         TokenKind::Int(_) => "integer literal",
+    //         TokenKind::Bool(_) => "boolean literal",
+    //         TokenKind::Not => "!",
+    //         TokenKind::Keyword(k) => match k {
+    //             Keyword::Var => "var",
+    //             Keyword::If => "if",
+    //             Keyword::Else => "else",
+    //             Keyword::Loop => "loop",
+    //             Keyword::Break => "break",
+    //             Keyword::Continue => "continue",
+    //         },
+    //         TokenKind::And => "&&",
+    //         TokenKind::Or => "||",
+    //         TokenKind::Band => "&",
+    //         TokenKind::Bor => "|",
+    //         TokenKind::Xor => "^",
+    //         TokenKind::Bnot => "~",
+    //         TokenKind::Shl => "<<",
+    //         TokenKind::Shr => ">>",
+    //         TokenKind::Mod => "%",
+    //         TokenKind::Ref => "@",
+    //     }
+    // }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Slice<'ip> {
     pub start: usize,
     pub len: usize,
     pub input: &'ip str,
+}
+
+impl<'ip> fmt::Debug for Slice<'ip> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // derive the substring safely
+        let end = self.start + self.len;
+        let snippet = &self.input[self.start..end];
+        f.debug_struct("Slice")
+            .field("start", &self.start)
+            .field("len", &self.len)
+            .field("text", &snippet)
+            .finish()
+    }
 }
 
 impl<'ip> Slice<'ip> {

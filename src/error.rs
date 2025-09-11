@@ -22,10 +22,8 @@ pub enum CompilerError<'ip> {
         lhs: Option<Token<'ip>>,
         rhs: Token<'ip>,
     },
-    TypeError(String),
-    UndefinedIdentifier {
-        ident: Token<'ip>,
-    },
+    TypeError(String, Slice<'ip>),
+    UndefinedIdentifier(Token<'ip>),
     Semantic(String),
 }
 
@@ -60,8 +58,8 @@ impl<'ip> Display for CompilerError<'ip> {
             Self::UnexpectedEof => {
                 write!(f, "ParserError: unexpected end of file")
             }
-            Self::TypeError(err) => {
-                write!(f, "TypeError: {}", err)
+            Self::TypeError(err, slice) => {
+                write!(f, "TypeError at {}: {}", slice.get_row_col(), err)
             }
             Self::OpTypeError { op, lhs, rhs } => {
                 if let Some(lhs) = lhs {
@@ -83,7 +81,7 @@ impl<'ip> Display for CompilerError<'ip> {
                     )
                 }
             }
-            Self::UndefinedIdentifier { ident } => {
+            Self::UndefinedIdentifier(ident) => {
                 write!(
                     f,
                     "NameError at {}: undefined identifier '{}'",

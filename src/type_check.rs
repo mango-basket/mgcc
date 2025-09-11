@@ -23,6 +23,15 @@ impl Type {
             Type::Ref(inner) => format!("ref {}", inner.to_str()),
         }
     }
+
+    pub fn get_size_words(&self) -> u16 {
+        match self {
+            Type::Int => 1,
+            Type::Bool => 1,
+            Type::Unit => 0,
+            Type::Ref(_) => 1,
+        }
+    }
 }
 
 pub type TypeEnv = HashMap<String, Type>;
@@ -146,9 +155,7 @@ impl TypeChecker {
                 if let Some(t) = self.var_env.get(token.slice.get_str()) {
                     Ok(t.clone())
                 } else {
-                    Err(CompilerError::UndefinedIdentifier {
-                        ident: token.clone(),
-                    })
+                    Err(CompilerError::UndefinedIdentifier(token.clone()))
                 }
             }
             Ast::VarDef { name, vartype, rhs } => {
@@ -248,7 +255,7 @@ impl TypeChecker {
                         return Err(CompilerError::TypeError(format!(
                                     "if expression without else branch must have unit type, but if branch has type {}. Add an else branch or change if branch to unit type.",
                                     if_ty.to_str()
-                                )));
+                                ), ifbody.get_slice()));
                     }
                     Type::Unit
                 };
@@ -291,11 +298,14 @@ impl TypeChecker {
                         None => *top = Some(this_ty.clone()),
                         Some(existing) => {
                             if *existing != this_ty {
-                                return Err(CompilerError::TypeError(format!(
+                                return Err(CompilerError::TypeError(
+                                    format!(
                                     "inconsistent break types in loop: expected {} but found {}",
                                     existing.to_str(),
                                     this_ty.to_str()
-                                )));
+                                ),
+                                    expr_opt.as_ref().unwrap().get_slice(),
+                                ));
                             }
                         }
                     }
@@ -309,16 +319,29 @@ impl TypeChecker {
                 // always return the type of the break expression
                 Ok(this_ty)
             }
-            Ast::Ref(ast) => Ok(Type::Ref(Box::new(self.infer_type(ast)?))),
-            Ast::Deref(ast) => {
-                let inner_ty = self.infer_type(ast)?;
+            Ast::Ref(inner) => match inner.as_ref() {
+                Ast::Identifier(_) | Ast::Deref(_) => {
+                    let inner_ty = self.infer_type(inner)?;
+                    Ok(Type::Ref(Box::new(inner_ty)))
+                }
+                Ast::Ref(_) => {
+                    let inner_ty = self.infer_type(inner)?;
+                    Ok(Type::Ref(Box::new(inner_ty)))
+                }
+                _ => Err(CompilerError::TypeError(
+                    format!("cannot take address of this expression"),
+                    inner.get_slice(),
+                )),
+            },
+            Ast::Deref(inner) => {
+                let inner_ty = self.infer_type(inner)?;
                 if let Type::Ref(ty) = inner_ty {
                     Ok(*ty)
                 } else {
-                    Err(CompilerError::TypeError(format!(
-                        "cannot dereference type {}",
-                        inner_ty.to_str()
-                    )))
+                    Err(CompilerError::TypeError(
+                        format!("cannot dereference type {}", inner_ty.to_str()),
+                        inner.get_slice(),
+                    ))
                 }
             }
         }
@@ -330,10 +353,10 @@ impl TypeChecker {
                 if let Some(t) = self.type_env.get(name.slice.get_str()) {
                     Ok(t.clone())
                 } else {
-                    Err(CompilerError::TypeError(format!(
-                        "'{}' is not a known type",
-                        name.slice.get_str()
-                    )))
+                    Err(CompilerError::TypeError(
+                        format!("'{}' is not a known type", name.slice.get_str()),
+                        name.slice.clone(),
+                    ))
                 }
             }
             Ast::Ref(inner) => {

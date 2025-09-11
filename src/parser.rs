@@ -83,6 +83,85 @@ pub enum Ast<'ip> {
 }
 
 impl<'ip> Ast<'ip> {
+    pub fn pretty(&self, indent: usize) -> String {
+        let pad = "  ".repeat(indent);
+        match self {
+            Ast::Identifier(tok) => format!("{}Ident({})", pad, tok.slice.get_str()),
+            Ast::Int(tok) => format!("{}Int({})", pad, tok.slice.get_str()),
+            Ast::Bool(tok) => format!("{}Bool({})", pad, tok.slice.get_str()),
+            Ast::Ref(inner) => format!("{}Ref({})", pad, inner.pretty(0)),
+            Ast::Deref(inner) => format!("{}Deref({})", pad, inner.pretty(0)),
+            Ast::UnaryOp { op, operand } => {
+                format!(
+                    "{}UnaryOp({},{})",
+                    pad,
+                    op.slice.get_str(),
+                    operand.pretty(0)
+                )
+            }
+            Ast::BinaryOp { left, op, right } => {
+                format!(
+                    "{}BinaryOp({},{},{})",
+                    pad,
+                    op.slice.get_str(),
+                    left.pretty(0),
+                    right.pretty(0)
+                )
+            }
+            Ast::VarDef { name, vartype, rhs } => {
+                if let Some(t) = vartype {
+                    format!(
+                        "{}VarDef({}:{},{})",
+                        pad,
+                        name.slice.get_str(),
+                        t.pretty(0),
+                        rhs.pretty(0)
+                    )
+                } else {
+                    format!("{}VarDef({},{})", pad, name.slice.get_str(), rhs.pretty(0))
+                }
+            }
+            Ast::Reassign { lhs, rhs } => {
+                format!("{}Reassign({}, {})", pad, lhs.pretty(0), rhs.pretty(0))
+            }
+            Ast::Statements(stmts) => {
+                let mut s = format!("{}Statements", pad);
+                for stmt in stmts {
+                    s.push('\n');
+                    s.push_str(&stmt.pretty(indent + 1));
+                }
+                s
+            }
+            Ast::IfElse {
+                condition,
+                ifbody,
+                elsebody,
+            } => {
+                let else_str = if let Some(e) = elsebody {
+                    format!(", Else({})", e.pretty(0))
+                } else {
+                    "".to_string()
+                };
+                format!(
+                    "{}If({},{}){}",
+                    pad,
+                    condition.pretty(0),
+                    ifbody.pretty(0),
+                    else_str
+                )
+            }
+            Ast::Loop(body) => format!("{}Loop({})", pad, body.pretty(0)),
+            Ast::Break(expr_opt) => {
+                if let Some(expr) = expr_opt {
+                    format!("{}Break({})", pad, expr.pretty(0))
+                } else {
+                    format!("{}Break", pad)
+                }
+            }
+            Ast::Continue => format!("{}Continue", pad),
+        }
+    }
+
     pub fn get_slice(&self) -> Slice<'ip> {
         match self {
             Ast::Identifier(t) | Ast::Int(t) | Ast::Bool(t) => t.slice.clone(),

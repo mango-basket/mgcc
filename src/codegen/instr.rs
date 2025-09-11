@@ -3,15 +3,17 @@ pub enum Instr {
     Push(u16),
     Load(u8),
     Store(u8),
-    Icmp,
+    Loadp,
+    Storep,
+    Cmp,
     Jmp(i8),
     Jlt(i8),
     Jgt(i8),
     Jeq(i8),
-    Iadd,
-    Isub,
-    Imul,
-    Idiv,
+    Add,
+    Sub,
+    Mul,
+    Div,
     Neg,
 
     Not,
@@ -46,13 +48,13 @@ impl Instr {
             Instr::Mov(_, _) => 2,
             Instr::Pushr(_) => 2,
             Instr::Popr(_) => 2,
-            Instr::Iadd
-            | Instr::Isub
-            | Instr::Imul
-            | Instr::Idiv
+            Instr::Add
+            | Instr::Sub
+            | Instr::Mul
+            | Instr::Div
             | Instr::Neg
             | Instr::Not
-            | Instr::Icmp
+            | Instr::Cmp
             | Instr::Halt => 1,
             Instr::Lbl(_) => 0,
             Instr::JmpLbl(_) => 2,
@@ -63,6 +65,8 @@ impl Instr {
             Instr::Or => 1,
             Instr::Shft => 1,
             Instr::Xor => 1,
+            Instr::Loadp => 1,
+            Instr::Storep => 1,
         }
     }
 }

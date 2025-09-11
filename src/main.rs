@@ -74,7 +74,7 @@ fn compile_source(
         .map_err(|e| e.to_string())?;
 
     if dump_ast {
-        println!("{:#?}", ast);
+        println!("{}", ast.pretty(0));
         return Ok(OutputKind::Ast);
     }
 
