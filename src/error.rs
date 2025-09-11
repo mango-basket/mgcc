@@ -6,10 +6,14 @@ use std::{error::Error, fmt::Display};
 
 #[derive(Debug)]
 pub enum CompilerError<'ip> {
-    UnknownChar(char),
+    UnknownChar {
+        ch: char,
+        slice: Slice<'ip>,
+    },
     UnexpectedToken {
         got: Token<'ip>,
         expected: &'static str,
+        slice: Slice<'ip>,
     },
     UnexpectedType {
         got: Type,
@@ -21,23 +25,39 @@ pub enum CompilerError<'ip> {
         op: Token<'ip>,
         lhs: Option<Token<'ip>>,
         rhs: Token<'ip>,
+        slice: Slice<'ip>,
     },
     TypeError(String, Slice<'ip>),
-    UndefinedIdentifier(Token<'ip>),
-    Semantic(String),
+    UndefinedIdentifier {
+        ident: Token<'ip>,
+        slice: Slice<'ip>,
+    },
+    Semantic {
+        err: String,
+        slice: Slice<'ip>,
+    },
 }
 
 impl<'ip> Display for CompilerError<'ip> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnknownChar(ch) => {
-                write!(f, "LexerError: unknown character '{}'", ch)
+            Self::UnknownChar { ch, slice } => {
+                write!(
+                    f,
+                    "LexerError at {}: unknown character '{}'",
+                    slice.get_row_col(),
+                    ch
+                )
             }
-            Self::UnexpectedToken { got, expected } => {
+            Self::UnexpectedToken {
+                got,
+                expected,
+                slice,
+            } => {
                 write!(
                     f,
                     "ParserError at {}: expected '{}' but found token '{:?}'",
-                    got.slice.get_row_col(),
+                    slice.get_row_col(),
                     expected,
                     got.kind
                 )
@@ -61,12 +81,17 @@ impl<'ip> Display for CompilerError<'ip> {
             Self::TypeError(err, slice) => {
                 write!(f, "TypeError at {}: {}", slice.get_row_col(), err)
             }
-            Self::OpTypeError { op, lhs, rhs } => {
+            Self::OpTypeError {
+                op,
+                lhs,
+                rhs,
+                slice,
+            } => {
                 if let Some(lhs) = lhs {
                     write!(
                         f,
                         "TypeError at {}: cannot apply operator '{}' between '{}' and '{}'",
-                        op.slice.get_row_col(),
+                        slice.get_row_col(),
                         op.slice.get_str(),
                         lhs.slice.get_str(),
                         rhs.slice.get_str(),
@@ -75,21 +100,23 @@ impl<'ip> Display for CompilerError<'ip> {
                     write!(
                         f,
                         "TypeError at {}: cannot apply operator '{}' to '{}'",
-                        op.slice.get_row_col(),
+                        slice.get_row_col(),
                         op.slice.get_str(),
                         rhs.slice.get_str(),
                     )
                 }
             }
-            Self::UndefinedIdentifier(ident) => {
+            Self::UndefinedIdentifier { ident, slice } => {
                 write!(
                     f,
                     "NameError at {}: undefined identifier '{}'",
-                    ident.slice.get_row_col(),
+                    slice.get_row_col(),
                     ident.slice.get_str()
                 )
             }
-            CompilerError::Semantic(err) => write!(f, "Semantic Error: {}", err),
+            Self::Semantic { err, slice } => {
+                write!(f, "Semantic Error at {}: {}", slice.get_row_col(), err)
+            }
         }
     }
 }
