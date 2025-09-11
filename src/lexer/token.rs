@@ -8,6 +8,7 @@ pub enum Keyword {
     Loop,
     Break,
     Continue,
+    Disp,
 }
 
 impl Keyword {
@@ -19,6 +20,7 @@ impl Keyword {
             "loop" => Some(Self::Loop),
             "continue" => Some(Self::Continue),
             "break" => Some(Self::Break),
+            "disp" => Some(Self::Disp),
             _ => None,
         }
     }

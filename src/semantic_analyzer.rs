@@ -81,6 +81,7 @@ impl SemanticChecker {
             },
 
             Ast::Deref(_) => Ok(()),
+            Ast::Disp(_) => Ok(()),
             Ast::Int(_) | Ast::Bool(_) | Ast::Identifier(_) => Ok(()),
         }
     }

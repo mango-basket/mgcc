@@ -80,6 +80,7 @@ pub enum Ast<'ip> {
     Loop(Box<Ast<'ip>>),
     Break(Option<Box<Ast<'ip>>>),
     Continue,
+    Disp(Box<Ast<'ip>>),
 }
 
 impl<'ip> Ast<'ip> {
@@ -159,27 +160,24 @@ impl<'ip> Ast<'ip> {
                 }
             }
             Ast::Continue => format!("{}Continue", pad),
+            Ast::Disp(ast) => format!("{}Disp {}", pad, ast.pretty(0)),
         }
     }
 
     pub fn get_slice(&self) -> Slice<'ip> {
         match self {
             Ast::Identifier(t) | Ast::Int(t) | Ast::Bool(t) => t.slice.clone(),
-
             Ast::Ref(inner) | Ast::Deref(inner) | Ast::Loop(inner) => inner.get_slice(),
-
             Ast::UnaryOp { op, operand } => {
                 let start = op.slice.start;
                 let end = operand.get_slice().start + operand.get_slice().len;
                 Slice::new(start, end - start, op.slice.input)
             }
-
             Ast::BinaryOp { left, op, right } => {
                 let start = left.get_slice().start;
                 let end = right.get_slice().start + right.get_slice().len;
                 Slice::new(start, end - start, op.slice.input)
             }
-
             Ast::VarDef {
                 name,
                 vartype: _,
@@ -189,13 +187,11 @@ impl<'ip> Ast<'ip> {
                 let end = rhs.get_slice().start + rhs.get_slice().len;
                 Slice::new(start, end - start, name.slice.input)
             }
-
             Ast::Reassign { lhs, rhs } => {
                 let start = lhs.get_slice().start;
                 let end = rhs.get_slice().start + rhs.get_slice().len;
                 Slice::new(start, end - start, lhs.get_slice().input)
             }
-
             Ast::Statements(stmts) => {
                 if stmts.is_empty() {
                     Slice::new(0, 0, "")
@@ -206,7 +202,6 @@ impl<'ip> Ast<'ip> {
                     Slice::new(start, end - start, last.input)
                 }
             }
-
             Ast::IfElse {
                 condition,
                 ifbody,
@@ -221,7 +216,6 @@ impl<'ip> Ast<'ip> {
                 };
                 Slice::new(start, end - start, condition.get_slice().input)
             }
-
             Ast::Break(expr_opt) => {
                 if let Some(expr) = expr_opt {
                     expr.get_slice()
@@ -229,8 +223,8 @@ impl<'ip> Ast<'ip> {
                     Slice::new(0, 0, "")
                 }
             }
-
             Ast::Continue => Slice::new(0, 0, ""),
+            Ast::Disp(ast) => ast.get_slice(),
         }
     }
 }
@@ -308,6 +302,9 @@ impl<'ip> Parser<'ip> {
                     }
                 }
                 Some(Ok(tok)) if Some(tok.clone().kind) == end => break, // stop at `}`
+                Some(Ok(tok)) if matches!(tok.kind, TokenKind::LineEnd) => {
+                    self.consume_line_end()?
+                }
                 _ => stmts.push(Box::new(self.parse_statement()?)),
             }
         }
@@ -404,6 +401,10 @@ impl<'ip> Parser<'ip> {
         if let Some(Ok(tok)) = self.peek() {
             match &tok.kind {
                 TokenKind::Keyword(Keyword::Var) => self.parse_vardef(),
+                TokenKind::Keyword(Keyword::Disp) => {
+                    expect_match!(self, TokenKind::Keyword(Keyword::Disp))?;
+                    Ok(Ast::Disp(Box::new(self.parse_expression()?)))
+                }
                 TokenKind::Identifier(_) | TokenKind::Star => self.parse_reassign(),
                 TokenKind::Keyword(Keyword::Break) => self.parse_break_stmt(),
                 TokenKind::Keyword(Keyword::Continue) => {
@@ -415,7 +416,7 @@ impl<'ip> Parser<'ip> {
                 // If its a line end, skip that and get a new statement (for cases when newlinw
                 // follows { )
                 TokenKind::LineEnd => {
-                    let _ = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
+                    self.consume_line_end()?;
                     Ok(self.parse_statement()?)
                 }
 

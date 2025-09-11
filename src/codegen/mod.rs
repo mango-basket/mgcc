@@ -1,3 +1,4 @@
+pub mod assembler;
 pub mod compiler;
 pub mod gen;
 pub mod instr;

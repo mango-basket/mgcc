@@ -256,9 +256,9 @@ impl TypeChecker {
                             })?;
 
                         return Err(CompilerError::TypeError(format!(
-                                    "if expression without else branch must have unit type, but if branch has type {}. Add an else branch or change if branch to unit type.",
-                                    if_ty.to_str()
-                                ), ifbody.get_slice()));
+                                            "if expression without else branch must have unit type, but if branch has type {}. Add an else branch or change if branch to unit type.",
+                                            if_ty.to_str()
+                                        ), ifbody.get_slice()));
                     }
                     Type::Unit
                 };
@@ -304,13 +304,13 @@ impl TypeChecker {
                         Some(existing) => {
                             if *existing != this_ty {
                                 return Err(CompilerError::TypeError(
-                                    format!(
-                                    "inconsistent break types in loop: expected {} but found {}",
-                                    existing.to_str(),
-                                    this_ty.to_str()
-                                ),
-                                    expr_opt.as_ref().unwrap().get_slice(),
-                                ));
+                                            format!(
+                                            "inconsistent break types in loop: expected {} but found {}",
+                                            existing.to_str(),
+                                            this_ty.to_str()
+                                        ),
+                                            expr_opt.as_ref().unwrap().get_slice(),
+                                        ));
                             }
                         }
                     }
@@ -349,6 +349,17 @@ impl TypeChecker {
                         inner.get_slice(),
                     ))
                 }
+            }
+            Ast::Disp(inner) => {
+                let inner_ty = self.infer_type(inner)?;
+                if inner_ty == Type::Unit {
+                    return Err(CompilerError::TypeError(
+                        "cannot display unit type".into(),
+                        inner.get_slice(),
+                    ));
+                }
+
+                Ok(Type::Unit)
             }
         }
     }

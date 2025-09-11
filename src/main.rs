@@ -15,7 +15,10 @@ use clap::{CommandFactory, Parser};
 use lexer::Lexer;
 
 use crate::{
-    codegen::{gen_asm, gen_bin, gen_instrs},
+    codegen::{
+        assembler::{assemble, link_objects, Object},
+        gen_asm, gen_bin, gen_instrs, Instr,
+    },
     semantic_analyzer::check_semantics,
     type_check::check_types,
 };
@@ -54,6 +57,60 @@ enum OutputKind {
     Ast,
 }
 
+// TEMP
+fn get_print_object() -> Object {
+    // temporarily hardcoding print
+    let print_unsigned: Vec<Instr> = vec![
+        Instr::Lbl("print".into()),
+        // pop number into r0
+        Instr::Popr(0),
+        // check zero
+        Instr::Pushr(0),
+        Instr::Push(0),
+        Instr::Cmp,
+        Instr::JeqLbl("print_zero".into()),
+        // loop: divide by 10, store remainder on stack
+        Instr::Lbl("loop".into()),
+        Instr::Pushr(0),
+        Instr::Push(10),
+        Instr::Div,
+        Instr::Popr(0), // quotient in r0
+        // remainder = old_num - quotient*10
+        Instr::Pushr(0),
+        Instr::Push(10),
+        Instr::Mul,
+        Instr::Pushr(1), // r1 stores original number
+        Instr::Sub,
+        Instr::Pushr(2), // r2 = remainder
+        Instr::Pushr(2),
+        Instr::Push(0x30),
+        Instr::Add,
+        Instr::Pushr(2), // push ascii digit to stack
+        // check if quotient != 0
+        Instr::Pushr(0),
+        Instr::Push(0),
+        Instr::Cmp,
+        Instr::JeqLbl("print_digits".into()), // done dividing
+        Instr::JmpLbl("loop".into()),
+        // print digits from stack
+        Instr::Lbl("print_digits".into()),
+        Instr::Popr(2),
+        Instr::Print,
+        Instr::Pushr(2),
+        Instr::Push(0),
+        Instr::Cmp,
+        Instr::JeqLbl("end".into()),
+        Instr::JmpLbl("print_digits".into()),
+        Instr::Lbl("print_zero".into()),
+        Instr::Push(0x30),
+        Instr::Print,
+        Instr::Lbl("end".into()),
+        Instr::Ret,
+    ];
+
+    assemble(print_unsigned).unwrap()
+}
+
 fn compile_source(
     code: &str,
     emit_asm: bool,
@@ -85,6 +142,8 @@ fn compile_source(
     if emit_asm {
         Ok(OutputKind::Bytes(gen_asm(instrs).into_bytes()))
     } else {
+        let object = assemble(instrs).unwrap();
+        let instrs = link_objects(vec![object, get_print_object()]).unwrap();
         Ok(OutputKind::Bytes(gen_bin(instrs)))
     }
 }

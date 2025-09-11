@@ -27,7 +27,7 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::Jlt(ofst) => format!("JLT8 {}", ofst),
             Instr::Jgt(ofst) => format!("JGT8 {}", ofst),
             Instr::Jeq(ofst) => format!("JEQ8 {}", ofst),
-            Instr::Lbl(id) => format!("LBL{}:", id),
+            Instr::Lbl(id) => format!("L{}:", id),
             Instr::JmpLbl(id) => format!("JMP LBL{}", id),
             Instr::JltLbl(id) => format!("JLT LBL{}", id),
             Instr::JgtLbl(id) => format!("JGT LBL{}", id),
@@ -41,6 +41,11 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::Popr(rd) => format!("POPR r{}", rd),
             Instr::Loadp => "LOADP".into(),
             Instr::Storep => "STOREP".into(),
+            Instr::Call(ofst) => format!("CALL {}", ofst),
+            Instr::Ret => "RET".into(),
+            Instr::Print => "PRINT".into(),
+            Instr::MvCur(ofst) => format!("MVCUR {}", ofst),
+            Instr::CallLbl(id) => format!("CALL {}", id),
         });
         code.push('\n');
     }
@@ -56,7 +61,7 @@ pub fn resolve_labels(instrs: Vec<Instr>) -> Vec<Instr> {
     for instr in &instrs {
         match instr {
             Instr::Lbl(id) => {
-                offsets.insert(*id, byte_pos);
+                offsets.insert(id.clone(), byte_pos);
             }
             _ => byte_pos += instr.byte_len(),
         }
@@ -112,7 +117,7 @@ pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
     for instr in instrs {
         code.extend(match instr {
             // Stack and control
-            Instr::Push(addr) => vec![0x01, (addr & 0xFF) as u8, (addr >> 8) as u8], // LE
+            Instr::Push(val) => vec![0x01, (val & 0xFF) as u8, (val >> 8) as u8], // LE
             Instr::Halt => vec![0x0F],
 
             // Memory
@@ -126,6 +131,8 @@ pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
             Instr::Jlt(addr) => vec![0x21, (addr as u8)],
             Instr::Jgt(addr) => vec![0x22, (addr as u8)],
             Instr::Jeq(addr) => vec![0x23, (addr as u8)],
+            Instr::Call(addr) => vec![0x24, (addr & 0xFF) as u8, (addr >> 8) as u8],
+            Instr::Ret => vec![0x25],
 
             // Integer Arithmetic
             Instr::Add => vec![0x30],
@@ -146,6 +153,10 @@ pub fn gen_bin(instrs: Vec<Instr>) -> Vec<u8> {
             Instr::Mov(rd, rs) => vec![0x50, (rd << 4) | rs],
             Instr::Pushr(rs) => vec![0x51, rs],
             Instr::Popr(rd) => vec![0x52, rd],
+
+            // Video
+            Instr::Print => vec![0x60],
+            Instr::MvCur(ofst) => vec![0x60, ofst as u8],
 
             // Labels
             _ => unreachable!(),

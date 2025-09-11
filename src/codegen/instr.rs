@@ -1,3 +1,4 @@
+#[derive(Clone, Debug)]
 pub enum Instr {
     Halt,
     Push(u16),
@@ -10,6 +11,8 @@ pub enum Instr {
     Jlt(i8),
     Jgt(i8),
     Jeq(i8),
+    Call(u16),
+    Ret,
     Add,
     Sub,
     Mul,
@@ -27,12 +30,16 @@ pub enum Instr {
     Pushr(u8),
     Popr(u8),
 
+    Print,
+    MvCur(i8),
+
     // label pseudo instructions
-    Lbl(usize),
-    JmpLbl(usize),
-    JltLbl(usize),
-    JgtLbl(usize),
-    JeqLbl(usize),
+    Lbl(String),
+    CallLbl(String),
+    JmpLbl(String),
+    JltLbl(String),
+    JgtLbl(String),
+    JeqLbl(String),
 }
 
 impl Instr {
@@ -61,12 +68,17 @@ impl Instr {
             Instr::JltLbl(_) => 2,
             Instr::JgtLbl(_) => 2,
             Instr::JeqLbl(_) => 2,
+            Instr::CallLbl(_) => 3,
             Instr::And => 1,
             Instr::Or => 1,
             Instr::Shft => 1,
             Instr::Xor => 1,
             Instr::Loadp => 1,
             Instr::Storep => 1,
+            Instr::Print => 1,
+            Instr::MvCur(_) => 1,
+            Instr::Call(_) => 3,
+            Instr::Ret => 1,
         }
     }
 }

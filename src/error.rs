@@ -31,6 +31,7 @@ pub enum CompilerError<'ip> {
         err: String,
         slice: Slice<'ip>,
     },
+    LinkerError(String),
 }
 
 impl<'ip> Display for CompilerError<'ip> {
@@ -102,6 +103,9 @@ impl<'ip> Display for CompilerError<'ip> {
             }
             Self::Semantic { err, slice } => {
                 write!(f, "Semantic Error at {}: {}", slice.get_row_col(), err)
+            }
+            CompilerError::LinkerError(err) => {
+                write!(f, "Linker Error: {}", err)
             }
         }
     }

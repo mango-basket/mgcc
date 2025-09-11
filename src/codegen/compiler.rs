@@ -15,14 +15,14 @@ pub struct Compiler {
     pub last_slot: u8,
     pub var_env: VarEnv,
     pub label_counter: usize,
-    pub loop_stack: Vec<(usize, usize)>, // (loop head, loop end)
+    pub loop_stack: Vec<(String, String)>, // (loop head, loop end)
 }
 
 impl Compiler {
-    fn next_label(&mut self) -> usize {
+    fn next_label(&mut self) -> String {
         let id = self.label_counter;
         self.label_counter += 1;
-        id
+        format!("L{}", id)
     }
 
     fn gen_comparison(&mut self, op: &TokenKind) -> Vec<Instr> {
@@ -35,36 +35,36 @@ impl Compiler {
 
         match op {
             TokenKind::Eq => {
-                instrs.push(Instr::JeqLbl(lbl_true)); // equal -> true
+                instrs.push(Instr::JeqLbl(lbl_true.clone())); // equal -> true
             }
             TokenKind::Neq => {
                 // not equal -> jump to true if NOT zero
                 // easiest: jump if equal -> skip true
-                instrs.push(Instr::JeqLbl(lbl_end));
-                instrs.push(Instr::JmpLbl(lbl_true));
+                instrs.push(Instr::JeqLbl(lbl_end.clone()));
+                instrs.push(Instr::JmpLbl(lbl_true.clone()));
             }
             TokenKind::Lt => {
-                instrs.push(Instr::JltLbl(lbl_true)); // < -> true
+                instrs.push(Instr::JltLbl(lbl_true.clone())); // < -> true
             }
             TokenKind::Gt => {
-                instrs.push(Instr::JgtLbl(lbl_true)); // > -> true
+                instrs.push(Instr::JgtLbl(lbl_true.clone())); // > -> true
             }
             TokenKind::Lte => {
                 // <= means not (>)
-                instrs.push(Instr::JgtLbl(lbl_end)); // if >, skip true
-                instrs.push(Instr::JmpLbl(lbl_true));
+                instrs.push(Instr::JgtLbl(lbl_end.clone())); // if >, skip true
+                instrs.push(Instr::JmpLbl(lbl_true.clone()));
             }
             TokenKind::Gte => {
                 // >= means not (<)
-                instrs.push(Instr::JltLbl(lbl_end)); // if <, skip true
-                instrs.push(Instr::JmpLbl(lbl_true));
+                instrs.push(Instr::JltLbl(lbl_end.clone())); // if <, skip true
+                instrs.push(Instr::JmpLbl(lbl_true.clone()));
             }
             _ => unreachable!(),
         }
 
         // false branch
         instrs.push(Instr::Push(0));
-        instrs.push(Instr::JmpLbl(lbl_end));
+        instrs.push(Instr::JmpLbl(lbl_end.clone()));
 
         // true branch
         instrs.push(Instr::Lbl(lbl_true));
@@ -227,13 +227,13 @@ impl Compiler {
                 let lbl_end = self.next_label();
 
                 // jump to else if condition is false (0)
-                instrs.extend([Instr::Push(0), Instr::Cmp, Instr::JeqLbl(lbl_else)]); // assuming 0 = false, 1 = true
+                instrs.extend([Instr::Push(0), Instr::Cmp, Instr::JeqLbl(lbl_else.clone())]); // assuming 0 = false, 1 = true
 
                 // generate if-body
                 instrs.extend(self.gen_instrs(&*ifbody)?);
 
                 // after if-body, jump to end
-                instrs.push(Instr::JmpLbl(lbl_end));
+                instrs.push(Instr::JmpLbl(lbl_end.clone()));
 
                 // else-body
                 instrs.push(Instr::Lbl(lbl_else));
@@ -248,11 +248,11 @@ impl Compiler {
                 let head_lbl = self.next_label();
                 let end_lbl = self.next_label();
 
-                self.loop_stack.push((head_lbl, end_lbl));
+                self.loop_stack.push((head_lbl.clone(), end_lbl.clone()));
 
-                instrs.push(Instr::Lbl(head_lbl));
+                instrs.push(Instr::Lbl(head_lbl.clone()));
                 instrs.extend(self.gen_instrs(&*body)?);
-                instrs.extend([Instr::JmpLbl(head_lbl), Instr::Lbl(end_lbl)]);
+                instrs.extend([Instr::JmpLbl(head_lbl.clone()), Instr::Lbl(end_lbl.clone())]);
 
                 self.loop_stack.pop();
             }
@@ -265,7 +265,8 @@ impl Compiler {
                             slice: ast.get_slice(),
                         }, // Shouldnt ever happen because of the semantic analyzer
                     )?
-                    .0,
+                    .0
+                    .clone(),
             )),
             Ast::Break(ref opt_expr) => {
                 if let Some(expr) = opt_expr {
@@ -281,7 +282,8 @@ impl Compiler {
                                 slice: ast.get_slice(),
                             }, // Shouldnt ever happen because of the semantic analyzer
                         )?
-                        .1,
+                        .1
+                        .clone(),
                 ));
             }
             Ast::Ref(inner) => {
@@ -308,6 +310,10 @@ impl Compiler {
             Ast::Deref(inner) => {
                 instrs.extend(self.gen_instrs(&*inner)?);
                 instrs.push(Instr::Loadp);
+            }
+            Ast::Disp(printable) => {
+                instrs.extend(self.gen_instrs(printable)?);
+                instrs.push(Instr::CallLbl("print".into()))
             }
         }
 
