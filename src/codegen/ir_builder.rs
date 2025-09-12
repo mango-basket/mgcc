@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    codegen::Instr,
+    codegen::instr::Instr,
     error::{CompilerError, CompilerResult},
     lexer::TokenKind,
     parser::Ast,
-    type_check::{Type, VarEnv},
+    semantic::type_check::{Type, VarEnv},
 };
 
 type SymbolTable = HashMap<String, (u8, Type)>; // slot, type

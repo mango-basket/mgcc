@@ -1,7 +1,4 @@
 pub mod assembler;
-pub mod compiler;
-pub mod gen;
+pub mod backend;
 pub mod instr;
-
-pub use gen::*;
-pub use instr::*;
+pub mod ir_builder;

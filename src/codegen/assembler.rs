@@ -1,5 +1,5 @@
 use crate::{
-    codegen::Instr,
+    codegen::instr::Instr,
     error::{CompilerError, CompilerResult},
 };
 

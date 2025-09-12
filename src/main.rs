@@ -8,8 +8,7 @@ mod codegen;
 mod error;
 mod lexer;
 mod parser;
-mod semantic_analyzer;
-mod type_check;
+mod semantic;
 
 use clap::{CommandFactory, Parser};
 use lexer::Lexer;
@@ -17,10 +16,10 @@ use lexer::Lexer;
 use crate::{
     codegen::{
         assembler::{assemble, link_objects, Object},
-        gen_asm, gen_bin, gen_instrs, Instr,
+        backend::{gen_asm, gen_bin, gen_instrs},
+        instr::Instr,
     },
-    semantic_analyzer::check_semantics,
-    type_check::check_types,
+    semantic::{analyzer::check_semantics, type_check::check_types},
 };
 
 #[derive(Parser, Debug)]

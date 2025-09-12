@@ -1,6 +1,6 @@
 use crate::{
     lexer::{Slice, Token},
-    type_check::Type,
+    semantic::type_check::Type,
 };
 use std::{error::Error, fmt::Display};
 

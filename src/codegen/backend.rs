@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use crate::{
-    codegen::{compiler::Compiler, Instr},
+    codegen::{instr::Instr, ir_builder::Compiler},
     error::CompilerResult,
     parser::Ast,
-    type_check::VarEnv,
+    semantic::type_check::VarEnv,
 };
 
 pub fn gen_asm(instrs: Vec<Instr>) -> String {
