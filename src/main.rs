@@ -15,7 +15,7 @@ use lexer::Lexer;
 
 use crate::{
     codegen::{
-        assembler::{assemble_object, gen_bin, Object},
+        assembler::{assemble_object, parse_assembly},
         backend::{gen_asm, gen_instrs},
         instr::Instr,
         linker::link_objects,
@@ -24,19 +24,27 @@ use crate::{
 };
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about)]
 struct Cli {
-    /// input file
-    #[arg(value_name = "test.mg")]
-    input: Option<String>,
+    /// input files
+    #[arg(value_name = "file")]
+    input: Vec<String>,
 
     /// run in REPL mode
     #[arg(short, long)]
     repl: bool,
 
-    /// emit assembly (`out.masm` default)
+    /// emit assembly (`.masm`)
     #[arg(short = 'S', long)]
     asm: bool,
+
+    /// produce object file (`.mobj`) from source or assembly
+    #[arg(short = 'O', long)]
+    object: bool,
+
+    /// link object files into binary (`a.out` default)
+    #[arg(short = 'L', long)]
+    link: bool,
 
     /// dump the tokenstream instead of compiling
     #[arg(short = 't', long)]
@@ -47,7 +55,7 @@ struct Cli {
     ast: bool,
 
     /// output filename
-    #[arg(short, long, value_name = "a.out")]
+    #[arg(short, long)]
     output: Option<String>,
 }
 
@@ -57,8 +65,95 @@ enum OutputKind {
     Ast,
 }
 
+fn compile_source(
+    code: &str,
+    emit_asm: bool,
+    dump_tokens: bool,
+    dump_ast: bool,
+) -> Result<OutputKind, String> {
+    let mut lexer = Lexer::new(code);
+
+    if dump_tokens {
+        for tok in lexer.by_ref() {
+            println!("{:?}", tok);
+        }
+        return Ok(OutputKind::Tokens);
+    }
+
+    let ast = parser::Parser::new(lexer)
+        .parse()
+        .map_err(|e| e.to_string())?;
+
+    if dump_ast {
+        println!("{}", ast.pretty(0));
+        return Ok(OutputKind::Ast);
+    }
+
+    let var_env = check_types(&ast).map_err(|e| e.to_string())?;
+    check_semantics(&ast).map_err(|e| e.to_string())?;
+    let instrs = gen_instrs(&ast, var_env).map_err(|e| e.to_string())?;
+
+    if emit_asm {
+        Ok(OutputKind::Bytes(gen_asm(instrs).into_bytes()))
+    } else {
+        let object = assemble_object(&instrs).unwrap();
+        let instrs = link_objects(vec![object, get_print_object()]).unwrap();
+        Ok(OutputKind::Bytes(instrs))
+    }
+}
+
+fn run_repl(emit_asm: bool) -> io::Result<()> {
+    loop {
+        print!("> ");
+        stdout().flush()?;
+
+        let mut input = String::new();
+        stdin().read_line(&mut input)?;
+        let input = input.trim();
+
+        if input == "exit" {
+            break;
+        }
+
+        match compile_source(input, emit_asm, false, false) {
+            Ok(OutputKind::Bytes(bytes)) => {
+                if emit_asm {
+                    println!("{}", String::from_utf8_lossy(&bytes));
+                } else {
+                    println!("{:02X?}", bytes);
+                }
+            }
+            Ok(OutputKind::Tokens) | Ok(OutputKind::Ast) => {}
+            Err(err) => eprintln!("Error: {}", err),
+        }
+    }
+    Ok(())
+}
+
+fn compile_file(
+    filename: &str,
+    output_path: &str,
+    emit_asm: bool,
+    dump_tokens: bool,
+    dump_ast: bool,
+) -> io::Result<()> {
+    let mut code = String::new();
+    File::open(filename)?.read_to_string(&mut code)?;
+
+    match compile_source(&code, emit_asm, dump_tokens, dump_ast) {
+        Ok(OutputKind::Bytes(bytes)) => File::create(output_path)?.write_all(&bytes)?,
+        Ok(OutputKind::Tokens) | Ok(OutputKind::Ast) => {}
+        Err(err) => {
+            eprintln!("Compilation failed: {}", err);
+            process::exit(1);
+        }
+    }
+
+    Ok(())
+}
+
 // TEMP
-fn get_print_object() -> Object {
+fn get_print_object() -> Vec<u8> {
     // temporarily hardcoding print
     let print_unsigned: Vec<Instr> = vec![
         Instr::Lbl("print".into()),
@@ -115,114 +210,109 @@ fn get_print_object() -> Object {
         Instr::Ret,
     ];
 
-    assemble_object(print_unsigned).unwrap()
+    assemble_object(&print_unsigned).unwrap()
 }
 
-fn compile_source(
-    code: &str,
-    emit_asm: bool,
-    dump_tokens: bool,
-    dump_ast: bool,
-) -> Result<OutputKind, String> {
-    let mut lexer = Lexer::new(code);
-
-    if dump_tokens {
-        for tok in lexer.by_ref() {
-            println!("{:?}", tok);
-        }
-        return Ok(OutputKind::Tokens);
-    }
-
-    let ast = parser::Parser::new(lexer)
-        .parse()
-        .map_err(|e| e.to_string())?;
-
-    if dump_ast {
-        println!("{}", ast.pretty(0));
-        return Ok(OutputKind::Ast);
-    }
-
-    let var_env = check_types(&ast).map_err(|e| e.to_string())?;
-    check_semantics(&ast).map_err(|e| e.to_string())?;
-    let instrs = gen_instrs(&ast, var_env).map_err(|e| e.to_string())?;
-
-    if emit_asm {
-        Ok(OutputKind::Bytes(gen_asm(instrs).into_bytes()))
+fn default_output_name(input: &str, ext: &str) -> String {
+    let path = std::path::Path::new(input);
+    let stem = path
+        .file_stem()
+        .unwrap_or_else(|| std::ffi::OsStr::new("out"));
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+    let filename = format!("{}.{}", stem.to_string_lossy(), ext);
+    if parent.as_os_str().is_empty() {
+        filename
     } else {
-        let object = assemble_object(instrs).unwrap();
-        let instrs = link_objects(vec![object, get_print_object()]).unwrap();
-        Ok(OutputKind::Bytes(gen_bin(instrs)))
+        parent.join(filename).to_string_lossy().to_string()
     }
-}
-
-fn run_repl(emit_asm: bool) -> io::Result<()> {
-    loop {
-        print!("> ");
-        stdout().flush()?;
-
-        let mut input = String::new();
-        stdin().read_line(&mut input)?;
-        let input = input.trim();
-
-        if input == "exit" {
-            break;
-        }
-
-        match compile_source(input, emit_asm, false, false) {
-            Ok(OutputKind::Bytes(bytes)) => {
-                if emit_asm {
-                    println!("{}", String::from_utf8_lossy(&bytes));
-                } else {
-                    println!("{:02X?}", bytes);
-                }
-            }
-            Ok(OutputKind::Tokens) | Ok(OutputKind::Ast) => {}
-            Err(err) => eprintln!("Error: {}", err),
-        }
-    }
-    Ok(())
-}
-
-fn compile_file(
-    filename: &str,
-    output_path: &str,
-    emit_asm: bool,
-    dump_tokens: bool,
-    dump_ast: bool,
-) -> io::Result<()> {
-    let mut code = String::new();
-    File::open(filename)?.read_to_string(&mut code)?;
-
-    match compile_source(&code, emit_asm, dump_tokens, dump_ast) {
-        Ok(OutputKind::Bytes(bytes)) => File::create(output_path)?.write_all(&bytes)?,
-        Ok(OutputKind::Tokens) | Ok(OutputKind::Ast) => {}
-        Err(err) => {
-            eprintln!("Compilation failed: {}", err);
-            process::exit(1);
-        }
-    }
-
-    Ok(())
 }
 
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
 
-    let output = cli.output.unwrap_or_else(|| {
-        if cli.asm {
-            "out.masm".into()
-        } else {
-            "out.mbin".into()
-        }
-    });
-
     if cli.repl {
-        run_repl(cli.asm)
-    } else if let Some(filename) = cli.input {
-        compile_file(&filename, &output, cli.asm, cli.tokens, cli.ast)
-    } else {
-        Cli::command().print_help().unwrap();
-        println!();
-        process::exit(1);
+        return run_repl(cli.asm);
     }
+
+    // determine output filename
+    let output = if let Some(out) = cli.output.clone() {
+        out
+    } else if cli.asm {
+        cli.input
+            .get(0)
+            .map(|f| default_output_name(f, "masm"))
+            .unwrap_or_else(|| "out.masm".into())
+    } else if cli.object {
+        cli.input
+            .get(0)
+            .map(|f| default_output_name(f, "mobj"))
+            .unwrap_or_else(|| "out.mobj".into())
+    } else if cli.link {
+        "a.out".into()
+    } else {
+        cli.input
+            .get(0)
+            .map(|f| default_output_name(f, "mbin"))
+            .unwrap_or_else(|| "a.out".into())
+    };
+
+    if cli.link {
+        if cli.input.is_empty() {
+            eprintln!("linker requires at least one input object file");
+            process::exit(1);
+        }
+
+        let mut objects = Vec::new();
+        for path in &cli.input {
+            let mut buf = Vec::new();
+            File::open(path)?.read_to_end(&mut buf)?;
+            objects.push(buf);
+        }
+
+        let instrs = link_objects(objects).unwrap();
+        File::create(output)?.write_all(&instrs)?;
+        return Ok(());
+    }
+
+    if cli.object {
+        if cli.input.len() != 1 {
+            eprintln!("assembler requires exactly one input file");
+            process::exit(1);
+        }
+
+        let filename = &cli.input[0];
+        let ext = filename.rsplit('.').next().unwrap_or("");
+
+        let object_bytes = if ext == "masm" {
+            // parse assembly file
+            let mut asm_code = String::new();
+            File::open(filename)?.read_to_string(&mut asm_code)?;
+            let instrs: Vec<Instr> = parse_assembly(&asm_code).unwrap();
+            assemble_object(&instrs).unwrap()
+        } else {
+            // treat as high-level source
+            let mut code = String::new();
+            File::open(filename)?.read_to_string(&mut code)?;
+            let lexer = Lexer::new(&code);
+            let ast = parser::Parser::new(lexer).parse().unwrap();
+            let var_env = check_types(&ast).unwrap();
+            check_semantics(&ast).unwrap();
+            let instrs = gen_instrs(&ast, var_env).unwrap();
+            assemble_object(&instrs).unwrap()
+        };
+
+        File::create(output)?.write_all(&object_bytes)?;
+        return Ok(());
+    }
+
+    // default: compile source to binary
+    if let Some(filename) = cli.input.get(0) {
+        compile_file(filename, &output, cli.asm, cli.tokens, cli.ast)?;
+        return Ok(());
+    }
+
+    // fallback: print help
+    Cli::command().print_help().unwrap();
+    println!();
+    process::exit(1);
 }

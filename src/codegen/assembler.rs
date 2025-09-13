@@ -19,13 +19,6 @@ pub struct Reloc {
 }
 
 #[derive(Debug, Clone)]
-pub struct BinReloc {
-    pub offset: u16,
-    pub sym_index: u16,
-    pub kind: RelocType,
-}
-
-#[derive(Debug, Clone)]
 pub struct Symbol {
     pub name: String,
     pub val: u16,
@@ -97,14 +90,6 @@ impl Object {
 
         out
     }
-}
-
-// compute operand offset for each relocation kind relative to instruction start.
-// for your current ISA, immediates start immediately after the 1-byte opcode,
-// so operand_offset(kind) == 1 for both Rel8 and Abs16. kept as function for clarity.
-fn operand_offset_for_kind(_kind: RelocType) -> u16 {
-    // in your encoding: opcode (1 byte) then immediate/displacement bytes
-    1u16
 }
 
 // parse assembly text into symbolic instruction vector
@@ -292,13 +277,13 @@ pub fn gen_bin(instrs: &Vec<Instr>) -> Vec<u8> {
     code
 }
 
-fn assemble_object(instrs: &Vec<Instr>) -> CompilerResult<Object> {
+pub fn assemble_object(instrs: &Vec<Instr>) -> CompilerResult<Vec<u8>> {
     let mut out_instr = Vec::new();
     let mut byte_pos: u16 = 0;
     let mut symbols = HashMap::new();
     let mut relocs = Vec::new();
+
     for instr in instrs {
-        byte_pos += instr.byte_len() as u16;
         match instr {
             Instr::Lbl(name) => {
                 if let Some(_) = symbols.insert(name, byte_pos) {
@@ -318,12 +303,13 @@ fn assemble_object(instrs: &Vec<Instr>) -> CompilerResult<Object> {
                     Some(addr) => (*addr as isize - byte_pos as isize) as i8,
                     // Forward reference
                     None => {
+                        symbols.insert(name, 0xFFFF);
                         relocs.push(Reloc {
-                            offset: byte_pos,
+                            offset: byte_pos + 1,
                             sym_name: name.to_string(),
                             kind: RelocType::Rel8,
                         });
-                        0
+                        -1 // 0xFF
                     }
                 };
 
@@ -339,20 +325,25 @@ fn assemble_object(instrs: &Vec<Instr>) -> CompilerResult<Object> {
             }
 
             Instr::CallLbl(name) => {
-                let target_addr = symbols.get(name).unwrap_or_else(|| {
-                    relocs.push(Reloc {
-                        offset: byte_pos,
-                        sym_name: name.to_string(),
-                        kind: RelocType::Abs16,
-                    });
-                    &0
-                });
+                let target_addr = match symbols.get(name) {
+                    Some(addr) => addr,
+                    None => {
+                        symbols.insert(name, 0xFFFF);
+                        relocs.push(Reloc {
+                            offset: byte_pos + 1,
+                            sym_name: name.to_string(),
+                            kind: RelocType::Abs16,
+                        });
+                        &0xFFFF
+                    }
+                };
 
                 out_instr.push(Instr::Call(*target_addr));
             }
 
             concrete => out_instr.push(concrete.clone()),
         }
+        byte_pos += instr.byte_len() as u16;
     }
 
     Ok(Object {
@@ -360,10 +351,11 @@ fn assemble_object(instrs: &Vec<Instr>) -> CompilerResult<Object> {
         symbols: symbols
             .iter()
             .map(|(name, val)| Symbol {
-                name: name.clone().to_string(),
+                name: name.to_string(),
                 val: *val,
             })
             .collect(),
         relocs: relocs,
-    })
+    }
+    .to_bin())
 }
