@@ -31,7 +31,11 @@ pub enum CompilerError<'ip> {
         err: String,
         slice: Slice<'ip>,
     },
-    LinkerError(String),
+    Assembler {
+        msg: String,
+        line: Option<usize>,
+    },
+    Linker(String),
 }
 
 impl<'ip> Display for CompilerError<'ip> {
@@ -104,9 +108,17 @@ impl<'ip> Display for CompilerError<'ip> {
             Self::Semantic { err, slice } => {
                 write!(f, "Semantic Error at {}: {}", slice.get_row_col(), err)
             }
-            CompilerError::LinkerError(err) => {
+            Self::Linker(err) => {
                 write!(f, "Linker Error: {}", err)
             }
+            CompilerError::Assembler { msg, line } => match line {
+                Some(l) => {
+                    write!(f, "Assembler Error at line {}: {}", l, msg)
+                }
+                None => {
+                    write!(f, "Assembler Error: {}", msg)
+                }
+            },
         }
     }
 }

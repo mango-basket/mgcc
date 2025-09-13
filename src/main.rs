@@ -15,9 +15,10 @@ use lexer::Lexer;
 
 use crate::{
     codegen::{
-        assembler::{assemble, link_objects, Object},
-        backend::{gen_asm, gen_bin, gen_instrs},
+        assembler::{assemble_object, gen_bin, Object},
+        backend::{gen_asm, gen_instrs},
         instr::Instr,
+        linker::link_objects,
     },
     semantic::{analyzer::check_semantics, type_check::check_types},
 };
@@ -114,7 +115,7 @@ fn get_print_object() -> Object {
         Instr::Ret,
     ];
 
-    assemble(print_unsigned).unwrap()
+    assemble_object(print_unsigned).unwrap()
 }
 
 fn compile_source(
@@ -148,7 +149,7 @@ fn compile_source(
     if emit_asm {
         Ok(OutputKind::Bytes(gen_asm(instrs).into_bytes()))
     } else {
-        let object = assemble(instrs).unwrap();
+        let object = assemble_object(instrs).unwrap();
         let instrs = link_objects(vec![object, get_print_object()]).unwrap();
         Ok(OutputKind::Bytes(gen_bin(instrs)))
     }
