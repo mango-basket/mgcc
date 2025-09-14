@@ -1,4 +1,5 @@
-use crate::error::{CompilerError, CompilerResult};
+use computils::error::{CompilerError, CompilerResult};
+
 use crate::parser::Ast;
 
 pub struct SemanticChecker {

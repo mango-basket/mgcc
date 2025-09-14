@@ -1,10 +1,13 @@
-use crate::lexer::{Keyword, Slice, Token, TokenKind};
 use std::{
     iter::{Enumerate, Peekable},
     str::Chars,
 };
 
-use crate::error::{CompilerError, CompilerResult};
+use computils::{
+    error::{CompilerError, CompilerResult},
+    lexer::{Keyword, Slice, Token, TokenKind},
+};
+
 pub struct Lexer<'ip> {
     input: &'ip str,
     input_iter: Peekable<Enumerate<Chars<'ip>>>,

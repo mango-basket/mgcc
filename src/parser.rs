@@ -1,9 +1,11 @@
 use std::{collections::VecDeque, iter::Peekable};
 
-use crate::{
+use computils::{
     error::{CompilerError, CompilerResult},
-    lexer::{Keyword, Lexer, Slice, Token, TokenKind},
+    lexer::{Keyword, Slice, Token, TokenKind},
 };
+
+use crate::lexer::Lexer;
 
 macro_rules! expect_match {
     // with explicit expected string

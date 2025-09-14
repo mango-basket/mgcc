@@ -1,11 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{
-    codegen::{instr::Instr, ir_builder::Compiler},
-    error::CompilerResult,
-    parser::Ast,
-    semantic::type_check::VarEnv,
-};
+use computils::{error::CompilerResult, instr::Instr};
+
+use crate::{codegen::ir_builder::Compiler, parser::Ast, semantic::type_check::VarEnv};
 
 pub fn gen_asm(instrs: Vec<Instr>) -> String {
     let mut code = String::new();
