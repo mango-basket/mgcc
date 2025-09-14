@@ -74,10 +74,17 @@ pub enum Ast<'ip> {
         rhs: Box<Ast<'ip>>,
     },
     Statements(Vec<Ast<'ip>>),
+    Items(Vec<Ast<'ip>>),
     IfElse {
         condition: Box<Ast<'ip>>,
         ifbody: Box<Ast<'ip>>,
         elsebody: Option<Box<Ast<'ip>>>,
+    },
+    Func {
+        name: Token<'ip>,
+        params: Vec<(Token<'ip>, Ast<'ip>)>,
+        body: Box<Ast<'ip>>,
+        ret: Option<Box<Ast<'ip>>>,
     },
     Loop(Box<Ast<'ip>>),
     Break(Option<Box<Ast<'ip>>>),
@@ -163,6 +170,39 @@ impl<'ip> Ast<'ip> {
             }
             Ast::Continue => format!("{}Continue", pad),
             Ast::Disp(ast) => format!("{}Disp {}", pad, ast.pretty(0)),
+            Ast::Items(stmts) => {
+                let mut s = format!("{}Items", pad);
+                for stmt in stmts {
+                    s.push('\n');
+                    s.push_str(&stmt.pretty(indent + 1));
+                }
+                s
+            }
+            Ast::Func {
+                name,
+                params,
+                body,
+                ret,
+            } => {
+                let params_str = params
+                    .iter()
+                    .map(|(n, t)| format!("{}:{}", n.slice.get_str(), t.pretty(0)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let ret_str = if let Some(r) = ret {
+                    format!(" -> {}", r.pretty(0))
+                } else {
+                    "".to_string()
+                };
+                format!(
+                    "{}Func({}({}){} {})",
+                    pad,
+                    name.slice.get_str(),
+                    params_str,
+                    ret_str,
+                    body.pretty(indent + 1)
+                )
+            }
         }
     }
 
@@ -227,6 +267,34 @@ impl<'ip> Ast<'ip> {
             }
             Ast::Continue => Slice::new(0, 0, ""),
             Ast::Disp(ast) => ast.get_slice(),
+            Ast::Items(items) => {
+                if items.is_empty() {
+                    Slice::new(0, 0, "")
+                } else {
+                    let start = items.first().unwrap().get_slice().start;
+                    let last = items.last().unwrap().get_slice();
+                    let end = last.start + last.len;
+                    Slice::new(start, end - start, last.input)
+                }
+            }
+            Ast::Func {
+                name,
+                params: _,
+                body,
+                ret,
+            } => {
+                let start = name.slice.start;
+
+                // compute end position
+                let end = if let Some(ret_tok) = ret {
+                    ret_tok.get_slice().start + ret_tok.get_slice().len
+                } else {
+                    let b = body.get_slice();
+                    b.start + b.len
+                };
+
+                Slice::new(start, end - start, name.slice.input)
+            }
         }
     }
 }
@@ -285,14 +353,14 @@ impl<'ip> Parser<'ip> {
     // -- Parse functions --
 
     pub fn parse(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
-        self.parse_statements(None)
+        self.parse_items(None)
     }
 
-    fn parse_statements(
+    fn parse_items(
         &mut self,
         end: Option<TokenKind>, // pass EOF at top-level, RBrace in a block
     ) -> CompilerResult<'ip, Ast<'ip>> {
-        let mut stmts = Vec::new();
+        let mut items = Vec::new();
 
         loop {
             match self.peek() {
@@ -304,6 +372,100 @@ impl<'ip> Parser<'ip> {
                     }
                 }
                 Some(Ok(tok)) if Some(tok.clone().kind) == end => break, // stop at `}`
+                Some(Ok(tok)) if matches!(tok.kind, TokenKind::LineEnd) => {
+                    self.consume_line_end()?
+                }
+                _ => items.push(self.parse_statement()?),
+            }
+        }
+
+        Ok(Ast::Statements(items))
+    }
+
+    fn parse_item(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        if let Some(Ok(tok)) = self.peek() {
+            match tok.kind {
+                TokenKind::Keyword(Keyword::Fn) => {
+                    // fn keyword
+                    expect_match!(self, TokenKind::Keyword(Keyword::Fn))?;
+
+                    // function name
+                    let name = expect_match!(self, TokenKind::Identifier(_))?;
+
+                    // parameters
+                    expect_match!(self, TokenKind::Lparen)?;
+                    let mut params = Vec::new();
+
+                    while let Some(Ok(tok)) = self.peek() {
+                        match tok.kind {
+                            TokenKind::Identifier(_) => {
+                                // param name
+                                let pname = expect_match!(self, TokenKind::Identifier(_))?;
+
+                                expect_match!(self, TokenKind::Colon)?;
+
+                                // type
+                                let ptype = self.parse_type()?;
+
+                                params.push((pname, ptype));
+
+                                // eat optional comma
+                                if let Some(Ok(peek)) = self.peek() {
+                                    if peek.kind == TokenKind::Comma {
+                                        self.next_token(); // consume comma
+                                    }
+                                }
+                            }
+                            TokenKind::Rparen => break,
+                            _ => {
+                                return Err(CompilerError::UnexpectedToken {
+                                    got: tok.clone(),
+                                    expected: ")",
+                                })
+                            }
+                        }
+                    }
+
+                    expect_match!(self, TokenKind::Rparen)?;
+
+                    // optional return type
+                    let mut ret = None;
+                    if let Some(Ok(tok)) = self.peek() {
+                        if tok.kind == TokenKind::Arrow {
+                            expect_match!(self, TokenKind::Arrow)?;
+                            let rtype = self.parse_type()?;
+                            ret = Some(Box::new(rtype))
+                        }
+                    }
+
+                    // function body
+                    let body = self.parse_statements()?; // you probably have parse_block
+
+                    return Ok(Ast::Func {
+                        name,
+                        params,
+                        ret,
+                        body: Box::new(body),
+                    });
+                }
+                _ => {
+                    return Err(CompilerError::UnexpectedToken {
+                        got: tok.clone(),
+                        expected: "",
+                    });
+                }
+            }
+        }
+        Err(CompilerError::UnexpectedEof)
+    }
+
+    fn parse_statements(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+        let mut stmts = Vec::new();
+
+        loop {
+            match self.peek() {
+                None => return Err(CompilerError::UnexpectedEof),
+                Some(Ok(tok)) if tok.clone().kind == TokenKind::Rbrace => break, // stop at `}`
                 Some(Ok(tok)) if matches!(tok.kind, TokenKind::LineEnd) => {
                     self.consume_line_end()?
                 }
@@ -542,7 +704,7 @@ impl<'ip> Parser<'ip> {
 
         // parse if-body block
         expect_match!(self, TokenKind::Lbrace)?;
-        let ifbody = self.parse_statements(Some(TokenKind::Rbrace))?;
+        let ifbody = self.parse_items(Some(TokenKind::Rbrace))?;
         expect_match!(self, TokenKind::Rbrace)?;
 
         // parse optional else / else if chain
@@ -562,7 +724,7 @@ impl<'ip> Parser<'ip> {
                     Some(Box::new(self.parse_if_expr()?))
                 } else {
                     expect_match!(self, TokenKind::Lbrace)?;
-                    let else_stmts = self.parse_statements(Some(TokenKind::Rbrace))?;
+                    let else_stmts = self.parse_items(Some(TokenKind::Rbrace))?;
                     expect_match!(self, TokenKind::Rbrace)?;
                     Some(Box::new(else_stmts))
                 }
@@ -582,7 +744,7 @@ impl<'ip> Parser<'ip> {
 
     fn parse_loop_expr(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
         expect_match!(self, TokenKind::Lbrace)?;
-        let body = self.parse_statements(Some(TokenKind::Rbrace))?;
+        let body = self.parse_items(Some(TokenKind::Rbrace))?;
         expect_match!(self, TokenKind::Rbrace)?;
         Ok(Ast::Loop(Box::new(body)))
     }

@@ -120,7 +120,6 @@ impl<'ip> Iterator for Lexer<'ip> {
         let (kind, len) = match cur {
             ';' | '\n' => (TokenKind::LineEnd, self.get_line_end()),
             '+' => (TokenKind::Plus, 1),
-            '-' => (TokenKind::Minus, 1),
             '*' => (TokenKind::Star, 1),
             '/' => (TokenKind::Slash, 1),
             '%' => (TokenKind::Mod, 1),
@@ -132,6 +131,8 @@ impl<'ip> Iterator for Lexer<'ip> {
             ':' => (TokenKind::Colon, 1),
             '^' => (TokenKind::Xor, 1),
             '~' => (TokenKind::Bnot, 1),
+            ',' => (TokenKind::Comma, 1),
+            '-' => self.get_twochar_tok(&[('>', TokenKind::Arrow)], TokenKind::Minus),
             '&' => self.get_twochar_tok(&[('&', TokenKind::And)], TokenKind::Band),
             '|' => self.get_twochar_tok(&[('|', TokenKind::Or)], TokenKind::Bor),
             '=' => self.get_twochar_tok(&[('=', TokenKind::Eq)], TokenKind::Assign),
