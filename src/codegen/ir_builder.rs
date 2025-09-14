@@ -89,7 +89,7 @@ impl Compiler {
                 }
             }
             Ast::UnaryOp { op, operand } => {
-                instrs.extend(self.gen_instrs(&*operand)?);
+                instrs.extend(self.gen_instrs(operand)?);
                 match op.kind {
                     TokenKind::Plus => {}
                     TokenKind::Minus => instrs.push(Instr::Neg),
@@ -104,8 +104,8 @@ impl Compiler {
                 }
             }
             Ast::BinaryOp { left, op, right } => {
-                instrs.extend(self.gen_instrs(&*left)?);
-                instrs.extend(self.gen_instrs(&*right)?);
+                instrs.extend(self.gen_instrs(left)?);
+                instrs.extend(self.gen_instrs(right)?);
 
                 match op.kind {
                     // Arithmetic
@@ -184,14 +184,14 @@ impl Compiler {
                 );
 
                 // generate code for rhs and store
-                instrs.extend(self.gen_instrs(&*rhs)?);
+                instrs.extend(self.gen_instrs(rhs)?);
                 instrs.push(Instr::Store(self.last_slot));
 
                 self.last_slot += 1;
             }
             Ast::Statements(asts) => {
                 for ast in asts {
-                    instrs.extend(self.gen_instrs(&*ast)?);
+                    instrs.extend(self.gen_instrs(ast)?);
                 }
             }
             Ast::Reassign { lhs, rhs } => match &**lhs {
@@ -200,18 +200,18 @@ impl Compiler {
                         if let Some((slot, _ty)) = self.symbol_table.get(ident) {
                             *slot
                         } else {
-                            return Err(CompilerError::UndefinedIdentifier(&ident_tok));
+                            return Err(CompilerError::UndefinedIdentifier(ident_tok));
                         }
                     } else {
                         unreachable!()
                     };
 
-                    instrs.extend(self.gen_instrs(&*rhs)?);
+                    instrs.extend(self.gen_instrs(rhs)?);
                     instrs.push(Instr::Store(slot));
                 }
                 Ast::Deref(inner) => {
-                    instrs.extend(self.gen_instrs(&*inner)?);
-                    instrs.extend(self.gen_instrs(&*rhs)?);
+                    instrs.extend(self.gen_instrs(inner)?);
+                    instrs.extend(self.gen_instrs(rhs)?);
                     instrs.push(Instr::Storep);
                 }
                 _ => {}
@@ -222,7 +222,7 @@ impl Compiler {
                 elsebody,
             } => {
                 // generate code for condition
-                instrs.extend(self.gen_instrs(&*condition)?);
+                instrs.extend(self.gen_instrs(condition)?);
 
                 let lbl_else = self.next_label();
                 let lbl_end = self.next_label();
@@ -231,7 +231,7 @@ impl Compiler {
                 instrs.extend([Instr::Push(0), Instr::Cmp, Instr::JeqLbl(lbl_else.clone())]); // assuming 0 = false, 1 = true
 
                 // generate if-body
-                instrs.extend(self.gen_instrs(&*ifbody)?);
+                instrs.extend(self.gen_instrs(ifbody)?);
 
                 // after if-body, jump to end
                 instrs.push(Instr::JmpLbl(lbl_end.clone()));
@@ -239,7 +239,7 @@ impl Compiler {
                 // else-body
                 instrs.push(Instr::Lbl(lbl_else));
                 if let Some(else_ast) = elsebody {
-                    instrs.extend(self.gen_instrs(&*else_ast)?);
+                    instrs.extend(self.gen_instrs(else_ast)?);
                 }
 
                 // end label
@@ -252,7 +252,7 @@ impl Compiler {
                 self.loop_stack.push((head_lbl.clone(), end_lbl.clone()));
 
                 instrs.push(Instr::Lbl(head_lbl.clone()));
-                instrs.extend(self.gen_instrs(&*body)?);
+                instrs.extend(self.gen_instrs(body)?);
                 instrs.extend([Instr::JmpLbl(head_lbl.clone()), Instr::Lbl(end_lbl.clone())]);
 
                 self.loop_stack.pop();
@@ -271,7 +271,7 @@ impl Compiler {
             )),
             Ast::Break(ref opt_expr) => {
                 if let Some(expr) = opt_expr {
-                    instrs.extend(self.gen_instrs(&**expr)?);
+                    instrs.extend(self.gen_instrs(expr)?);
                 };
 
                 instrs.push(Instr::JmpLbl(
@@ -298,18 +298,18 @@ impl Compiler {
                                 instrs.push(Instr::Mul);
                                 instrs.push(Instr::Sub); // addr = fp - slot * 2
                             } else {
-                                return Err(CompilerError::UndefinedIdentifier(&ident_tok));
+                                return Err(CompilerError::UndefinedIdentifier(ident_tok));
                             }
                         } else {
                             unreachable!();
                         }
                     }
-                    Ast::Deref(ref inner) => instrs.extend(self.gen_instrs(&*inner)?),
+                    Ast::Deref(ref inner) => instrs.extend(self.gen_instrs(inner)?),
                     _ => unreachable!(),
                 }
             }
             Ast::Deref(inner) => {
-                instrs.extend(self.gen_instrs(&*inner)?);
+                instrs.extend(self.gen_instrs(inner)?);
                 instrs.push(Instr::Loadp);
             }
             Ast::Disp(printable) => {

@@ -73,7 +73,7 @@ pub enum Ast<'ip> {
         lhs: Box<Ast<'ip>>,
         rhs: Box<Ast<'ip>>,
     },
-    Statements(Vec<Box<Ast<'ip>>>),
+    Statements(Vec<Ast<'ip>>),
     IfElse {
         condition: Box<Ast<'ip>>,
         ifbody: Box<Ast<'ip>>,
@@ -307,7 +307,7 @@ impl<'ip> Parser<'ip> {
                 Some(Ok(tok)) if matches!(tok.kind, TokenKind::LineEnd) => {
                     self.consume_line_end()?
                 }
-                _ => stmts.push(Box::new(self.parse_statement()?)),
+                _ => stmts.push(self.parse_statement()?),
             }
         }
 
