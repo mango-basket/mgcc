@@ -1,20 +1,24 @@
 use std::collections::HashMap;
 
-use computils::{
+use computils::instr::Instr;
+
+use crate::{
     error::{CompilerError, CompilerResult},
-    instr::Instr,
-    lexer::TokenKind,
-    semantic::Type,
+    grammar::ast::Ast,
+    semantic::type_check::Type,
+    tokenizer::token::TokenKind,
 };
 
-use crate::{parser::Ast, semantic::type_check::VarEnv};
+type SymbolTable = HashMap<String, (Option<u8>, Type)>;
 
-type SymbolTable = HashMap<String, (u8, Type)>; // slot, type
+pub struct FunctionContext {
+    pub symbols: SymbolTable,
+    pub next_slot: u8,
+    pub ret_type: Type,
+}
 
 pub struct Compiler {
-    pub symbol_table: SymbolTable,
-    pub last_slot: u8,
-    pub var_env: VarEnv,
+    pub functions: HashMap<String, FunctionContext>,
     pub label_counter: usize,
     pub loop_stack: Vec<(String, String)>, // (loop head, loop end)
 }

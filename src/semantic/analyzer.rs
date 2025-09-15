@@ -1,6 +1,7 @@
-use computils::error::{CompilerError, CompilerResult};
-
-use crate::parser::Ast;
+use crate::{
+    error::{CompilerError, CompilerResult},
+    grammar::ast::Ast,
+};
 
 pub struct SemanticChecker {
     loop_depth: usize,

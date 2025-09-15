@@ -1,15 +1,17 @@
 use std::io::{self, stdin, stdout, Write};
 
 mod codegen;
-mod lexer;
-mod parser;
+mod error;
+mod grammar;
 mod semantic;
+mod tokenizer;
 
 use clap::{CommandFactory, Parser};
-use lexer::Lexer;
+use tokenizer::lexer::Lexer;
 
 use crate::{
     codegen::backend::{gen_asm, gen_instrs},
+    grammar::parser,
     semantic::{analyzer::check_semantics, type_check::check_types},
 };
 

@@ -3,9 +3,9 @@ use std::{
     str::Chars,
 };
 
-use computils::{
+use crate::{
     error::{CompilerError, CompilerResult},
-    lexer::{Keyword, Slice, Token, TokenKind},
+    tokenizer::token::{Keyword, Slice, Token, TokenKind},
 };
 
 pub struct Lexer<'ip> {
