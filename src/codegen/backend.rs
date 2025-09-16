@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use computils::instr::Instr;
 
 use crate::{
-    codegen::ir_builder::Compiler, error::CompilerResult, grammar::ast::Ast,
-    semantic::type_check::VarEnv,
+    codegen::ir_builder::{Compiler, FunctionContext},
+    error::CompilerResult,
+    grammar::ast::Ast,
 };
 
 pub fn gen_asm(instrs: Vec<Instr>) -> String {
@@ -46,6 +47,8 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::Print => "PRINT".into(),
             Instr::MvCur(ofst) => format!("MVCUR {}", ofst),
             Instr::CallLbl(id) => format!("CALL {}", id),
+            Instr::Loadr(rs, imm) => format!("LOADR [r{}, {}]", rs, imm),
+            Instr::Storer(rd, imm) => format!("STORER [r{}, {}]", rd, imm),
         });
         code.push('\n');
     }
@@ -53,13 +56,15 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
     code
 }
 
-pub fn gen_instrs<'ip>(ast: &'ip Ast<'ip>, var_env: VarEnv) -> CompilerResult<'ip, Vec<Instr>> {
+pub fn gen_instrs<'ip>(
+    ast: &'ip Ast<'ip>,
+    functions: HashMap<String, FunctionContext>,
+) -> CompilerResult<'ip, Vec<Instr>> {
     let mut compiler = Compiler {
-        symbol_table: HashMap::new(),
-        last_slot: 0,
-        var_env,
+        functions,
         label_counter: 0,
         loop_stack: Vec::new(),
+        cur_func: None,
     };
 
     let mut ret = compiler.gen_instrs(ast)?;

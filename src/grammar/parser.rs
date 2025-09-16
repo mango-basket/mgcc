@@ -458,7 +458,7 @@ impl<'ip> Parser<'ip> {
         match token.kind {
             TokenKind::Int(_) => Ok(Ast::Int(token)),
             TokenKind::Bool(_) => Ok(Ast::Bool(token)),
-            TokenKind::Identifier(_) => Ok(Ast::Identifier(token)),
+            TokenKind::Identifier(_) => self.parse_func_call(&token),
 
             TokenKind::Lparen => {
                 let expr = self.parse_expression()?;
@@ -474,6 +474,56 @@ impl<'ip> Parser<'ip> {
                 got: token,
                 expected: "int, bool, identifier, unary operator, if, loop or '('",
             }),
+        }
+    }
+
+    fn parse_func_call(&mut self, token: &Token<'ip>) -> Result<Ast<'ip>, CompilerError<'ip>> {
+        if let Some(kind) = self.peek_kind() {
+            if !matches!(kind, TokenKind::Lparen) {
+                return Ok(Ast::Identifier(token.clone()));
+            }
+
+            self.bump()?;
+
+            let mut params = Vec::new();
+
+            while let Some(Ok(tok)) = self.peek() {
+                match tok.kind {
+                    TokenKind::Identifier(_) => {
+                        // param name
+                        let pname = expect_match!(self, TokenKind::Identifier(_))?;
+                        expect_match!(self, TokenKind::Colon)?;
+
+                        // type
+                        let ptype = self.parse_type()?;
+
+                        params.push((pname, ptype));
+
+                        // eat optional comma
+                        if let Some(Ok(peek)) = self.peek() {
+                            if peek.kind == TokenKind::Comma {
+                                self.next_token(); // consume comma
+                            }
+                        }
+                    }
+                    TokenKind::Rparen => break,
+                    _ => {
+                        return Err(CompilerError::UnexpectedToken {
+                            got: tok.clone(),
+                            expected: ")",
+                        })
+                    }
+                }
+            }
+
+            expect_match!(self, TokenKind::Rparen)?;
+
+            Ok(Ast::FuncCall {
+                name: token.clone(),
+                params,
+            })
+        } else {
+            Ok(Ast::Identifier(token.clone()))
         }
     }
 

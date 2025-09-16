@@ -2,28 +2,89 @@ use std::collections::HashMap;
 
 use computils::instr::Instr;
 
+// sp and fp registers
+const SP: u8 = 4;
+const FP: u8 = 5;
+
 use crate::{
     error::{CompilerError, CompilerResult},
     grammar::ast::Ast,
-    semantic::type_check::Type,
-    tokenizer::token::TokenKind,
+    semantic::type_check::{FnSignature, Type},
+    tokenizer::token::{Slice, Token, TokenKind},
 };
 
-type SymbolTable = HashMap<String, (Option<u8>, Type)>;
+type SymbolTable = HashMap<String, (Option<i8>, Type)>;
 
 pub struct FunctionContext {
     pub symbols: SymbolTable,
-    pub next_slot: u8,
-    pub ret_type: Type,
+    pub fp_offset: i8,
+    pub signature: FnSignature,
 }
 
 pub struct Compiler {
     pub functions: HashMap<String, FunctionContext>,
     pub label_counter: usize,
     pub loop_stack: Vec<(String, String)>, // (loop head, loop end)
+    pub cur_func: Option<String>,
 }
 
-impl Compiler {
+impl<'ip> Compiler {
+    pub fn enter_function(&mut self, name: &str) -> CompilerResult<()> {
+        if self.functions.contains_key(name) {
+            self.cur_func = Some(name.to_string());
+            Ok(())
+        } else {
+            Err(CompilerError::Semantic {
+                err: format!("attempted to enter undeclared function `{}`", name),
+                slice: Slice::new(0, 0, ""),
+            })
+        }
+    }
+
+    pub fn exit_function(&mut self) {
+        self.cur_func = None;
+    }
+
+    fn cur_func_ctx(&mut self) -> &mut FunctionContext {
+        let fname = self.cur_func.clone().expect("no current function");
+        self.functions
+            .get_mut(&fname)
+            .expect("current function missing from map")
+    }
+
+    fn cur_func_ctx_ref(&self) -> &FunctionContext {
+        let fname = self.cur_func.clone().expect("no current function");
+        self.functions
+            .get(&fname)
+            .expect("current function missing from map")
+    }
+
+    fn alloc_local(&mut self, name: &str, ty: Type) -> i8 {
+        let func = self.cur_func_ctx();
+        let fp_offset = func.fp_offset;
+        func.symbols.insert(name.to_string(), (Some(fp_offset), ty));
+        func.fp_offset -= 2;
+        fp_offset
+    }
+
+    fn lookup_local_slot(&self, name: &str) -> Option<i8> {
+        self.cur_func_ctx_ref()
+            .symbols
+            .get(name)
+            .and_then(|(slot, _ty)| *slot)
+    }
+
+    fn lookup_local_type(&self, name: &str) -> Option<Type> {
+        self.cur_func_ctx_ref()
+            .symbols
+            .get(name)
+            .map(|(_slot, ty)| ty.clone())
+    }
+
+    fn has_local(&self, name: &str) -> bool {
+        self.cur_func_ctx_ref().symbols.contains_key(name)
+    }
+
     fn next_label(&mut self) -> String {
         let id = self.label_counter;
         self.label_counter += 1;
@@ -81,7 +142,7 @@ impl Compiler {
         instrs
     }
 
-    pub fn gen_instrs<'ip>(&mut self, ast: &'ip Ast<'ip>) -> CompilerResult<'ip, Vec<Instr>> {
+    pub fn gen_instrs(&mut self, ast: &'ip Ast<'ip>) -> CompilerResult<'ip, Vec<Instr>> {
         let mut instrs = Vec::new();
 
         match ast {
@@ -107,57 +168,13 @@ impl Compiler {
                     }
                 }
             }
-            Ast::BinaryOp { left, op, right } => {
-                instrs.extend(self.gen_instrs(left)?);
-                instrs.extend(self.gen_instrs(right)?);
-
-                match op.kind {
-                    // Arithmetic
-                    TokenKind::Plus => instrs.push(Instr::Add),
-                    TokenKind::Minus => instrs.push(Instr::Sub),
-                    TokenKind::Star => instrs.push(Instr::Mul),
-                    TokenKind::Slash => instrs.push(Instr::Div),
-                    TokenKind::Mod => instrs.extend([
-                        Instr::Popr(1),
-                        Instr::Popr(0),
-                        Instr::Pushr(0),
-                        Instr::Pushr(0),
-                        Instr::Pushr(1),
-                        Instr::Div,
-                        Instr::Pushr(1),
-                        Instr::Mul,
-                        Instr::Sub,
-                    ]),
-
-                    // Comparison
-                    TokenKind::Eq
-                    | TokenKind::Neq
-                    | TokenKind::Lt
-                    | TokenKind::Gt
-                    | TokenKind::Lte
-                    | TokenKind::Gte => instrs.extend(self.gen_comparison(&op.kind)),
-
-                    // Logical + bitwisw
-                    TokenKind::And | TokenKind::Band => instrs.push(Instr::And),
-                    TokenKind::Or | TokenKind::Bor => instrs.push(Instr::Or),
-                    TokenKind::Xor => instrs.push(Instr::Xor),
-                    TokenKind::Shl => instrs.extend([Instr::Neg, Instr::Shft]),
-                    TokenKind::Shr => instrs.push(Instr::Shft),
-
-                    _ => {
-                        return Err(CompilerError::UnexpectedToken {
-                            got: op.clone(),
-                            expected: "+', '-', '*' or '/",
-                        })
-                    }
-                }
-            }
+            Ast::BinaryOp { left, op, right } => instrs.extend(self.gen_bin_op(left, op, right)?),
             Ast::Identifier(token) => {
                 if let TokenKind::Identifier(ref name) = token.kind {
-                    if let Some((slot, _ty)) = self.symbol_table.get(name) {
-                        instrs.push(Instr::Load(*slot));
+                    if let Some(ofst) = self.lookup_local_slot(name) {
+                        instrs.push(Instr::Loadr(FP, ofst));
                     } else {
-                        return Err(CompilerError::UndefinedIdentifier(token));
+                        return Err(CompilerError::UndefinedIdentifier(token.clone()));
                     }
                 } else {
                     unreachable!();
@@ -177,21 +194,13 @@ impl Compiler {
             } => {
                 // look up type from var_env (guaranteed by typechecker)
                 let ty = self
-                    .var_env
-                    .get(name.slice.get_str())
+                    .lookup_local_type(name.slice.get_str())
                     .expect("typechecker ensures variables exist");
 
-                // assign a slot for it
-                self.symbol_table.insert(
-                    name.slice.get_str().to_string(),
-                    (self.last_slot, ty.clone()),
-                );
+                let slot = self.alloc_local(name.slice.get_str(), ty);
 
-                // generate code for rhs and store
                 instrs.extend(self.gen_instrs(rhs)?);
-                instrs.push(Instr::Store(self.last_slot));
-
-                self.last_slot += 1;
+                instrs.push(Instr::Storer(FP, slot));
             }
             Ast::Statements(asts) => {
                 for ast in asts {
@@ -200,18 +209,18 @@ impl Compiler {
             }
             Ast::Reassign { lhs, rhs } => match &**lhs {
                 Ast::Identifier(ident_tok) => {
-                    let slot = if let TokenKind::Identifier(ref ident) = ident_tok.kind {
-                        if let Some((slot, _ty)) = self.symbol_table.get(ident) {
-                            *slot
+                    let ofst = if let TokenKind::Identifier(ref ident) = ident_tok.kind {
+                        if let Some(ofst) = self.lookup_local_slot(ident) {
+                            ofst
                         } else {
-                            return Err(CompilerError::UndefinedIdentifier(ident_tok));
+                            return Err(CompilerError::UndefinedIdentifier(ident_tok.clone()));
                         }
                     } else {
                         unreachable!()
                     };
 
                     instrs.extend(self.gen_instrs(rhs)?);
-                    instrs.push(Instr::Store(slot));
+                    instrs.push(Instr::Storer(FP, ofst));
                 }
                 Ast::Deref(inner) => {
                     instrs.extend(self.gen_instrs(inner)?);
@@ -295,14 +304,14 @@ impl Compiler {
                 match **inner {
                     Ast::Identifier(ref ident_tok) => {
                         if let TokenKind::Identifier(ref name) = ident_tok.kind {
-                            if let Some((slot, _ty)) = self.symbol_table.get(name) {
+                            if let Some(slot) = self.lookup_local_slot(name) {
                                 instrs.push(Instr::Pushr(5)); // push fp onto stack
-                                instrs.push(Instr::Push(*slot as u16)); // push addr rel to fp
+                                instrs.push(Instr::Push(slot as u16)); // push addr rel to fp
                                 instrs.push(Instr::Push(2));
                                 instrs.push(Instr::Mul);
                                 instrs.push(Instr::Sub); // addr = fp - slot * 2
                             } else {
-                                return Err(CompilerError::UndefinedIdentifier(ident_tok));
+                                return Err(CompilerError::UndefinedIdentifier(ident_tok.clone()));
                             }
                         } else {
                             unreachable!();
@@ -320,6 +329,89 @@ impl Compiler {
                 instrs.extend(self.gen_instrs(printable)?);
                 instrs.push(Instr::Popr(0));
                 instrs.push(Instr::CallLbl("print".into())) // prints r0
+            }
+            Ast::Items(asts) => {
+                for ast in asts {
+                    instrs.extend(self.gen_instrs(ast)?);
+                }
+            }
+            Ast::Func {
+                name,
+                params: _,
+                body,
+                ret: _,
+            } => {
+                instrs.push(Instr::Lbl(name.slice.get_str().to_string()));
+                self.enter_function(name.slice.get_str()).unwrap();
+                instrs.extend(self.gen_instrs(body)?);
+                instrs.push(Instr::Ret); // just in case
+                self.exit_function();
+            }
+            Ast::Return(expr_opt) => {
+                if let Some(expr) = expr_opt {
+                    instrs.extend(self.gen_instrs(expr)?);
+                }
+                instrs.push(Instr::Ret);
+            }
+            Ast::FuncCall { name, params } => {
+                // allocate return space if needed
+                // allocate space for params
+                // load params
+                // call function
+            }
+        }
+
+        Ok(instrs)
+    }
+
+    fn gen_bin_op(
+        &mut self,
+        left: &'ip Box<Ast<'_>>,
+        op: &'ip Token<'_>,
+        right: &'ip Box<Ast<'_>>,
+    ) -> Result<Vec<Instr>, CompilerError<'ip>> {
+        let mut instrs = Vec::new();
+
+        instrs.extend(self.gen_instrs(left)?);
+        instrs.extend(self.gen_instrs(right)?);
+        match op.kind {
+            // Arithmetic
+            TokenKind::Plus => instrs.push(Instr::Add),
+            TokenKind::Minus => instrs.push(Instr::Sub),
+            TokenKind::Star => instrs.push(Instr::Mul),
+            TokenKind::Slash => instrs.push(Instr::Div),
+            TokenKind::Mod => instrs.extend([
+                Instr::Popr(1),
+                Instr::Popr(0),
+                Instr::Pushr(0),
+                Instr::Pushr(0),
+                Instr::Pushr(1),
+                Instr::Div,
+                Instr::Pushr(1),
+                Instr::Mul,
+                Instr::Sub,
+            ]),
+
+            // Comparison
+            TokenKind::Eq
+            | TokenKind::Neq
+            | TokenKind::Lt
+            | TokenKind::Gt
+            | TokenKind::Lte
+            | TokenKind::Gte => instrs.extend(self.gen_comparison(&op.kind)),
+
+            // Logical + bitwisw
+            TokenKind::And | TokenKind::Band => instrs.push(Instr::And),
+            TokenKind::Or | TokenKind::Bor => instrs.push(Instr::Or),
+            TokenKind::Xor => instrs.push(Instr::Xor),
+            TokenKind::Shl => instrs.extend([Instr::Neg, Instr::Shft]),
+            TokenKind::Shr => instrs.push(Instr::Shft),
+
+            _ => {
+                return Err(CompilerError::UnexpectedToken {
+                    got: op.clone(),
+                    expected: "+', '-', '*' or '/",
+                })
             }
         }
 

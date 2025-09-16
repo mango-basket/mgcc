@@ -56,10 +56,7 @@ impl SemanticChecker {
                 self.check(left)?;
                 self.check(right)
             }
-
             Ast::VarDef { rhs, .. } => self.check(rhs),
-
-            // check rhs, check lhs to be a valid deref or variable name
             Ast::Reassign { lhs, rhs } => {
                 self.check(lhs)?;
                 self.check(rhs)?;
@@ -81,10 +78,18 @@ impl SemanticChecker {
                     slice: inner.get_slice(),
                 }),
             },
-
             Ast::Deref(_) => Ok(()),
             Ast::Disp(_) => Ok(()),
             Ast::Int(_) | Ast::Bool(_) | Ast::Identifier(_) => Ok(()),
+            Ast::Items(_asts) => Ok(()),
+            Ast::Func {
+                name: _,
+                params: _,
+                body: _,
+                ret: _,
+            } => Ok(()),
+            Ast::Return(_ast) => Ok(()),
+            Ast::FuncCall { name, params } => Ok(()),
         }
     }
 }

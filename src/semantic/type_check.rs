@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::format};
+use std::collections::HashMap;
 
 use crate::{
     codegen::ir_builder::FunctionContext,
@@ -6,6 +6,12 @@ use crate::{
     grammar::ast::Ast,
     tokenizer::token::{Token, TokenKind},
 };
+
+pub struct FnSignature {
+    params: Vec<Type>,
+    ret: Type,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
@@ -102,9 +108,9 @@ impl<'ip> TypeChecker {
             });
         }
 
-        let slot = ctx.next_slot;
+        let slot = ctx.fp_offset;
         ctx.symbols.insert(name.to_string(), (Some(slot), ty));
-        ctx.next_slot += 1;
+        ctx.fp_offset -= 2;
 
         Ok(())
     }
@@ -134,11 +140,11 @@ impl<'ip> TypeChecker {
         self.cur_func = None;
     }
 
-    pub fn declare_function(&mut self, name: &str, ret_type: Type) -> &mut FunctionContext {
+    pub fn declare_function(&mut self, name: &str, signature: FnSignature) -> &mut FunctionContext {
         let ctx = FunctionContext {
             symbols: HashMap::new(),
-            next_slot: 0,
-            ret_type,
+            fp_offset: 2 * (signature.params.len() - 1) as i8,
+            signature,
         };
         self.functions.insert(name.to_string(), ctx);
         self.functions.get_mut(name).unwrap()
@@ -177,14 +183,67 @@ impl<'ip> TypeChecker {
             Ast::Ref(inner) => self.check_ref(inner),
             Ast::Deref(inner) => self.check_deref(inner),
             Ast::Disp(inner) => self.check_disp(inner),
-            Ast::Items(_) => Ok(Type::Unit), // I dont think i need to type check this. def regretting this decision sometime in the future
+            Ast::Items(_) => Ok(Type::Unit),
             Ast::Func {
                 name,
                 params,
                 body,
                 ret,
             } => self.check_func(name, params, body, ret),
-            Ast::Return(ast) => todo!(),
+            Ast::Return(ret_opt) => self.check_return(ret_opt),
+            Ast::FuncCall { name, params } => self.check_func_call(name, params),
+        }
+    }
+
+    fn check_func_call(
+        &mut self,
+        name: &'ip Token<'_>,
+        params: &'ip Vec<(Token<'_>, Ast<'_>)>,
+    ) -> Result<Type, CompilerError<'ip>> {
+        let func = self
+            .get_function(&name.slice.to_string())
+            .ok_or(CompilerError::UndefinedIdentifier(name.clone()))?;
+
+        let expected_len = func.signature.params.len();
+        if params.len() != expected_len {
+            return Err(CompilerError::Semantic {
+                err: format!(
+                    "function {} expects {} argument{}, but got {}",
+                    name.slice.to_string(),
+                    expected_len,
+                    if expected_len == 1 { "" } else { "s" },
+                    params.len()
+                ),
+                slice: name.slice.clone(),
+            });
+        }
+
+        let params_ty = params
+            .iter()
+            .map(|(name, param)| (name, self.ast_to_type(param)))
+            .collect::<Vec<_>>();
+
+        for (expected, (name, got)) in func.signature.params.iter().zip(params_ty) {
+            if *expected != got.clone()? {
+                return Err(CompilerError::UnexpectedType {
+                    got: got?,
+                    expected: expected.to_string(),
+                    slice: name.clone().slice,
+                });
+            }
+        }
+
+        Ok(func.signature.ret.clone())
+    }
+
+    fn check_return(
+        &mut self,
+        ret_opt: &'ip Option<Box<Ast<'_>>>,
+    ) -> Result<Type, CompilerError<'ip>> {
+        if let Some(ret_ast) = ret_opt {
+            Ok(self.infer_type(ret_ast)?)
+        } else {
+            Ok(Type::Unit)
         }
     }
 
@@ -205,12 +264,20 @@ impl<'ip> TypeChecker {
             });
         }
 
+        self.declare_function(
+            name_str,
+            FnSignature {
+                params: Vec::new(),
+                ret: Type::Unit,
+            },
+        );
         self.enter_function(&name_str);
 
         let mut params_ty = Vec::new();
 
-        for (_pname, ast) in params {
+        for (pname, ast) in params {
             let param_ty = self.ast_to_type(ast)?;
+            self.add_local_to_current(&pname.slice.to_string(), param_ty.clone());
             params_ty.push(param_ty);
         }
 
@@ -253,7 +320,19 @@ impl<'ip> TypeChecker {
             });
         }
 
-        self.declare_function(name_str, ret_ty);
+        let func = self
+            .get_function_mut(
+                self.cur_func
+                    .clone()
+                    .ok_or(CompilerError::UndefinedIdentifier(name.clone()))?
+                    .as_str(),
+            )
+            .ok_or(CompilerError::UndefinedIdentifier(name.clone()))?;
+
+        func.signature = FnSignature {
+            params: params_ty,
+            ret: ret_ty,
+        };
 
         self.leave_function();
         Ok(Type::Unit)
@@ -418,9 +497,9 @@ impl<'ip> TypeChecker {
                     })?;
 
                 return Err(CompilerError::TypeError(format!(
-                                            "if expression without else branch must have unit type, but if branch has type {}. Add an else branch or change if branch to unit type.",
-                                            if_ty.to_string()
-                                        ), ifbody.get_slice()));
+                    "if expression without else branch must have unit type, but if branch has type {}. Add an else branch or change if branch to unit type.",
+                    if_ty.to_string()
+                ), ifbody.get_slice()));
             }
             Type::Unit
         };
@@ -486,7 +565,7 @@ impl<'ip> TypeChecker {
         if let Some(t) = self.get_local(token.slice.get_str()) {
             Ok(t.clone())
         } else {
-            Err(CompilerError::UndefinedIdentifier(token))
+            Err(CompilerError::UndefinedIdentifier(token.clone()))
         }
     }
 

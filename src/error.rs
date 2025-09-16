@@ -5,7 +5,7 @@ use crate::{
     tokenizer::token::{Slice, Token},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CompilerError<'ip> {
     UnknownChar {
         ch: char,
@@ -27,7 +27,7 @@ pub enum CompilerError<'ip> {
         rhs: Token<'ip>,
     },
     TypeError(String, Slice<'ip>),
-    UndefinedIdentifier(&'ip Token<'ip>),
+    UndefinedIdentifier(Token<'ip>),
     Semantic {
         err: String,
         slice: Slice<'ip>,

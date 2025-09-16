@@ -43,6 +43,10 @@ pub enum Ast<'ip> {
     Return(Option<Box<Ast<'ip>>>),
     Continue,
     Disp(Box<Ast<'ip>>),
+    FuncCall {
+        name: Token<'ip>,
+        params: Vec<(Token<'ip>, Ast<'ip>)>,
+    },
 }
 
 impl<'ip> Ast<'ip> {
@@ -163,6 +167,14 @@ impl<'ip> Ast<'ip> {
                     format!("{}Return", pad)
                 }
             }
+            Ast::FuncCall { name, params } => {
+                let params_str = params
+                    .iter()
+                    .map(|(n, t)| format!("{}:{}", n.slice.get_str(), t.pretty(0)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{pad}Call {} ({params_str})", name.slice.to_string())
+            }
         }
     }
 
@@ -262,6 +274,7 @@ impl<'ip> Ast<'ip> {
                     Slice::new(0, 0, "")
                 }
             }
+            Ast::FuncCall { name, params: _ } => name.clone().slice,
         }
     }
 }
