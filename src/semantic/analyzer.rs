@@ -89,7 +89,7 @@ impl SemanticChecker {
                 ret: _,
             } => Ok(()),
             Ast::Return(_ast) => Ok(()),
-            Ast::FuncCall { name, params } => Ok(()),
+            Ast::FuncCall { .. } => Ok(()),
         }
     }
 }

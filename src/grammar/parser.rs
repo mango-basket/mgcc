@@ -135,7 +135,7 @@ impl<'ip> Parser<'ip> {
                 Some(Ok(tok)) if matches!(tok.kind, TokenKind::LineEnd) => {
                     self.consume_line_end()?
                 }
-                _ => items.push(self.parse_statement()?),
+                _ => items.push(self.parse_item()?),
             }
         }
 
@@ -156,31 +156,26 @@ impl<'ip> Parser<'ip> {
                     expect_match!(self, TokenKind::Lparen)?;
                     let mut params = Vec::new();
 
-                    while let Some(Ok(tok)) = self.peek() {
-                        match tok.kind {
-                            TokenKind::Identifier(_) => {
-                                // param name
-                                let pname = expect_match!(self, TokenKind::Identifier(_))?;
-                                expect_match!(self, TokenKind::Colon)?;
+                    if !matches!(self.peek_kind(), Some(TokenKind::Rparen)) {
+                        loop {
+                            // param name
+                            let pname = expect_match!(self, TokenKind::Identifier(_))?;
+                            expect_match!(self, TokenKind::Colon)?;
 
-                                // type
-                                let ptype = self.parse_type()?;
+                            // type
+                            let ptype = self.parse_type()?;
+                            params.push((pname, ptype));
 
-                                params.push((pname, ptype));
+                            match self.peek_kind() {
+                                Some(TokenKind::Comma) => {
+                                    self.bump()?; // consume comma
 
-                                // eat optional comma
-                                if let Some(Ok(peek)) = self.peek() {
-                                    if peek.kind == TokenKind::Comma {
-                                        self.next_token(); // consume comma
+                                    // if next is ')', that's trailing comma → break
+                                    if matches!(self.peek_kind(), Some(TokenKind::Rparen)) {
+                                        break;
                                     }
                                 }
-                            }
-                            TokenKind::Rparen => break,
-                            _ => {
-                                return Err(CompilerError::UnexpectedToken {
-                                    got: tok.clone(),
-                                    expected: ")",
-                                })
+                                _ => break,
                             }
                         }
                     }
@@ -197,8 +192,12 @@ impl<'ip> Parser<'ip> {
                         }
                     }
 
+                    expect_match!(self, TokenKind::Lbrace)?;
+
                     // function body
-                    let body = self.parse_statements()?; // you probably have parse_block
+                    let body = self.parse_statements()?; // or parse_block
+
+                    expect_match!(self, TokenKind::Rbrace)?;
 
                     return Ok(Ast::Func {
                         name,
@@ -483,35 +482,25 @@ impl<'ip> Parser<'ip> {
                 return Ok(Ast::Identifier(token.clone()));
             }
 
-            self.bump()?;
+            self.bump()?; // consume '('
 
-            let mut params = Vec::new();
+            let mut args = Vec::new();
 
-            while let Some(Ok(tok)) = self.peek() {
-                match tok.kind {
-                    TokenKind::Identifier(_) => {
-                        // param name
-                        let pname = expect_match!(self, TokenKind::Identifier(_))?;
-                        expect_match!(self, TokenKind::Colon)?;
+            if !matches!(self.peek_kind(), Some(TokenKind::Rparen)) {
+                loop {
+                    let expr = self.parse_expression()?;
+                    args.push(expr);
 
-                        // type
-                        let ptype = self.parse_type()?;
+                    match self.peek_kind() {
+                        Some(TokenKind::Comma) => {
+                            self.bump()?; // consume comma
 
-                        params.push((pname, ptype));
-
-                        // eat optional comma
-                        if let Some(Ok(peek)) = self.peek() {
-                            if peek.kind == TokenKind::Comma {
-                                self.next_token(); // consume comma
+                            // if next is ')', that's trailing comma  break
+                            if matches!(self.peek_kind(), Some(TokenKind::Rparen)) {
+                                break;
                             }
                         }
-                    }
-                    TokenKind::Rparen => break,
-                    _ => {
-                        return Err(CompilerError::UnexpectedToken {
-                            got: tok.clone(),
-                            expected: ")",
-                        })
+                        _ => break,
                     }
                 }
             }
@@ -520,7 +509,7 @@ impl<'ip> Parser<'ip> {
 
             Ok(Ast::FuncCall {
                 name: token.clone(),
-                params,
+                args,
             })
         } else {
             Ok(Ast::Identifier(token.clone()))

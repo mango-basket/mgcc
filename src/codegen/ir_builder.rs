@@ -15,6 +15,7 @@ use crate::{
 
 type SymbolTable = HashMap<String, (Option<i8>, Type)>;
 
+#[derive(Debug)]
 pub struct FunctionContext {
     pub symbols: SymbolTable,
     pub fp_offset: i8,
@@ -337,27 +338,72 @@ impl<'ip> Compiler {
             }
             Ast::Func {
                 name,
-                params: _,
+                params,
                 body,
-                ret: _,
+                ret,
             } => {
-                instrs.push(Instr::Lbl(name.slice.get_str().to_string()));
-                self.enter_function(name.slice.get_str()).unwrap();
+                let fname = name.slice.get_str().to_string();
+                instrs.push(Instr::Lbl(fname.clone()));
+
+                self.enter_function(&fname)
+                    .expect("semantic run guarantees existence of function");
+
+                // prologue
+                instrs.extend([
+                    Instr::Pushr(FP),   // save old FP
+                    Instr::Mov(FP, SP), // set new FP = SP
+                ]);
+
+                // body
                 instrs.extend(self.gen_instrs(body)?);
-                instrs.push(Instr::Ret); // just in case
+
+                // default epilogue (in case no explicit return)
+                instrs.extend([
+                    Instr::Mov(SP, FP), // pop locals
+                    Instr::Popr(FP),    // restore old FP
+                    Instr::Ret,         // return
+                ]);
+
                 self.exit_function();
             }
             Ast::Return(expr_opt) => {
                 if let Some(expr) = expr_opt {
-                    instrs.extend(self.gen_instrs(expr)?);
+                    instrs.extend(self.gen_instrs(expr)?); // compute return value
+                    instrs.push(Instr::Storer(FP, 2)); // store into return slot
                 }
-                instrs.push(Instr::Ret);
+
+                // epilogue
+                instrs.extend([Instr::Mov(SP, FP), Instr::Popr(FP), Instr::Ret]);
             }
-            Ast::FuncCall { name, params } => {
-                // allocate return space if needed
-                // allocate space for params
-                // load params
-                // call function
+            Ast::FuncCall { name, args } => {
+                let sig = self
+                    .functions
+                    .get(name.slice.get_str())
+                    .map(|f| f.signature.clone())
+                    .expect("call to undeclared function");
+
+                // allocate hidden return slot if needed
+                if sig.ret != Type::Unit {
+                    instrs.push(Instr::Push(0));
+                }
+
+                // push args right-to-left
+                for arg in args.iter().rev() {
+                    instrs.extend(self.gen_instrs(arg)?);
+                }
+
+                instrs.push(Instr::CallLbl(name.slice.get_str().to_string()));
+
+                // pop args (caller cleanup)
+                for _ in args {
+                    instrs.push(Instr::Popr(0));
+                }
+
+                // fetch return value (if not unit)
+                if sig.ret != Type::Unit {
+                    instrs.push(Instr::Popr(0)); // move return into r0 (or just leave on stack if you want)
+                    instrs.push(Instr::Pushr(0));
+                }
             }
         }
 

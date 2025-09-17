@@ -7,9 +7,10 @@ use crate::{
     tokenizer::token::{Token, TokenKind},
 };
 
+#[derive(Clone, Debug)]
 pub struct FnSignature {
-    params: Vec<Type>,
-    ret: Type,
+    pub params: Vec<Type>,
+    pub ret: Type,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,7 +144,9 @@ impl<'ip> TypeChecker {
     pub fn declare_function(&mut self, name: &str, signature: FnSignature) -> &mut FunctionContext {
         let ctx = FunctionContext {
             symbols: HashMap::new(),
-            fp_offset: 2 * (signature.params.len() - 1) as i8,
+            // Start in the positive offset for params + ret addr + Optional return type
+            fp_offset: (1 + (signature.ret != Type::Unit) as i8)
+                * (signature.params.len() as i8 - 1),
             signature,
         };
         self.functions.insert(name.to_string(), ctx);
@@ -191,17 +194,22 @@ impl<'ip> TypeChecker {
                 ret,
             } => self.check_func(name, params, body, ret),
             Ast::Return(ret_opt) => self.check_return(ret_opt),
-            Ast::FuncCall { name, params } => self.check_func_call(name, params),
+            Ast::FuncCall { name, args } => self.check_func_call(name, args),
         }
     }
 
     fn check_func_call(
         &mut self,
         name: &'ip Token<'_>,
-        params: &'ip Vec<(Token<'_>, Ast<'_>)>,
+        params: &'ip Vec<Ast<'_>>,
     ) -> Result<Type, CompilerError<'ip>> {
+        let params_ty = params
+            .iter()
+            .map(|param| self.infer_type(param))
+            .collect::<Vec<_>>();
+
         let func = self
-            .get_function(&name.slice.to_string())
+            .get_function(&name.slice.get_str())
             .ok_or(CompilerError::UndefinedIdentifier(name.clone()))?;
 
         let expected_len = func.signature.params.len();
@@ -218,12 +226,7 @@ impl<'ip> TypeChecker {
             });
         }
 
-        let params_ty = params
-            .iter()
-            .map(|(name, param)| (name, self.ast_to_type(param)))
-            .collect::<Vec<_>>();
-
-        for (expected, (name, got)) in func.signature.params.iter().zip(params_ty) {
+        for (expected, got) in func.signature.params.iter().zip(params_ty) {
             if *expected != got.clone()? {
                 return Err(CompilerError::UnexpectedType {
                     got: got?,
@@ -257,30 +260,42 @@ impl<'ip> TypeChecker {
         let name_str = name.slice.get_str();
 
         // check for redefs
-        if self.get_function(&name_str).is_some() {
+        if self.has_function(&name_str) {
             return Err(CompilerError::Semantic {
                 err: format!("function {} already defined once before", name_str),
                 slice: name.slice.clone(),
             });
         }
 
+        let ret_ty = if let Some(rettype_ast) = ret {
+            self.ast_to_type(rettype_ast)?
+        } else {
+            Type::Unit
+        };
+
         self.declare_function(
             name_str,
             FnSignature {
                 params: Vec::new(),
-                ret: Type::Unit,
+                ret: ret_ty.clone(),
             },
         );
-        self.enter_function(&name_str);
-
+        self.enter_function(&name_str)?;
         let mut params_ty = Vec::new();
 
         for (pname, ast) in params {
             let param_ty = self.ast_to_type(ast)?;
-            self.add_local_to_current(&pname.slice.to_string(), param_ty.clone());
+            self.add_local_to_current(&pname.slice.get_str(), param_ty.clone())?;
             params_ty.push(param_ty);
         }
 
+        self.add_local_to_current("__return_instr_addr", Type::Int)?;
+
+        if ret_ty != Type::Unit {
+            self.add_local_to_current("__return_loc", Type::Int)?;
+        }
+
+        // fp offset should be 0 now
         let mut body_ty = None;
         if let Ast::Statements(stmts) = body {
             for stmt in stmts {
@@ -305,13 +320,6 @@ impl<'ip> TypeChecker {
         }
 
         let body_ty = body_ty.unwrap_or(Type::Unit);
-
-        let ret_ty = if let Some(rettype_ast) = ret {
-            self.ast_to_type(rettype_ast)?
-        } else {
-            Type::Unit
-        };
-
         if body_ty != ret_ty {
             return Err(CompilerError::UnexpectedType {
                 got: body_ty,
@@ -557,7 +565,7 @@ impl<'ip> TypeChecker {
             rhs_ty
         };
 
-        self.add_local_to_current(name.slice.get_str(), final_ty.clone());
+        self.add_local_to_current(name.slice.get_str(), final_ty.clone())?;
         Ok(final_ty)
     }
 
@@ -674,8 +682,8 @@ impl<'ip> TypeChecker {
                 let inner_ty = self.ast_to_type(inner)?;
                 Ok(Type::Ref(Box::new(inner_ty)))
             }
-            _ => Err(CompilerError::Semantic {
-                err: "invalid AST in type annotation".to_string(),
+            other => Err(CompilerError::Semantic {
+                err: format!("invalid AST {:#?} in type annotation", other),
                 slice: ast.get_slice(),
             }),
         }

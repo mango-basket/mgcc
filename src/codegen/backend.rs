@@ -28,7 +28,7 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::Jlt(ofst) => format!("JLT8 {}", ofst),
             Instr::Jgt(ofst) => format!("JGT8 {}", ofst),
             Instr::Jeq(ofst) => format!("JEQ8 {}", ofst),
-            Instr::Lbl(id) => format!("\nL{}:", id),
+            Instr::Lbl(id) => format!("\n{}:", id),
             Instr::JmpLbl(id) => format!("JMP LBL{}", id),
             Instr::JltLbl(id) => format!("JLT LBL{}", id),
             Instr::JgtLbl(id) => format!("JGT LBL{}", id),
