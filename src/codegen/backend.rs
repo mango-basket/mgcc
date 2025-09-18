@@ -8,7 +8,19 @@ use crate::{
     grammar::ast::Ast,
 };
 
+fn reg(num: u8) -> String {
+    match num {
+        0..4 => format!("r{num}"),
+        4 => format!("sp"),
+        5 => format!("fp"),
+        _ => unreachable!(),
+    }
+}
+
 pub fn gen_asm(instrs: Vec<Instr>) -> String {
+    let mut prologue = vec![Instr::CallLbl("main".to_string()), Instr::Halt];
+    prologue.extend(instrs.clone());
+    let instrs = prologue;
     let mut code = String::new();
 
     for instr in instrs {
@@ -37,9 +49,9 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::Or => "OR".into(),
             Instr::Xor => "XOR".into(),
             Instr::Shft => "SHFT".into(),
-            Instr::Mov(rd, rs) => format!("MOV r{} r{}", rd, rs),
-            Instr::Pushr(rs) => format!("PUSHR r{}", rs),
-            Instr::Popr(rd) => format!("POPR r{}", rd),
+            Instr::Mov(rd, rs) => format!("MOV {}, {}", reg(rd), reg(rs)),
+            Instr::Pushr(rs) => format!("PUSHR {}", reg(rs)),
+            Instr::Popr(rd) => format!("POPR {}", reg(rd)),
             Instr::Loadp => "LOADP".into(),
             Instr::Storep => "STOREP".into(),
             Instr::Call(ofst) => format!("CALL {}", ofst),
@@ -47,8 +59,8 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::Print => "PRINT".into(),
             Instr::MvCur(ofst) => format!("MVCUR {}", ofst),
             Instr::CallLbl(id) => format!("CALL {}", id),
-            Instr::Loadr(rs, imm) => format!("LOADR [r{}, {}]", rs, imm),
-            Instr::Storer(rd, imm) => format!("STORER [r{}, {}]", rd, imm),
+            Instr::Loadr(rs, imm) => format!("LOADR [{}, {}]", reg(rs), imm),
+            Instr::Storer(rd, imm) => format!("STORER [{}, {}]", reg(rd), imm),
         });
         code.push('\n');
     }
@@ -67,7 +79,5 @@ pub fn gen_instrs<'ip>(
         cur_func: None,
     };
 
-    let mut ret = compiler.gen_instrs(ast)?;
-    ret.push(Instr::Halt);
-    Ok(ret)
+    Ok(compiler.gen_instrs(ast)?)
 }

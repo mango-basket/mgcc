@@ -82,10 +82,6 @@ impl<'ip> Compiler {
             .map(|(_slot, ty)| ty.clone())
     }
 
-    fn has_local(&self, name: &str) -> bool {
-        self.cur_func_ctx_ref().symbols.contains_key(name)
-    }
-
     fn next_label(&mut self) -> String {
         let id = self.label_counter;
         self.label_counter += 1;

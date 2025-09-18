@@ -62,9 +62,9 @@ fn compile_source(code: &str, dump_tokens: bool, dump_ast: bool) -> Result<Vec<u
         return Ok(Vec::new());
     }
 
-    let var_env = check_types(&ast).map_err(|e| e.to_string())?;
-    check_semantics(&ast).map_err(|e| e.to_string())?;
-    let instrs = gen_instrs(&ast, var_env).map_err(|e| e.to_string())?;
+    let funcs = check_types(&ast).map_err(|e| e.to_string())?;
+    check_semantics(&ast, &funcs).map_err(|e| e.to_string())?;
+    let instrs = gen_instrs(&ast, funcs).map_err(|e| e.to_string())?;
 
     Ok(gen_asm(instrs).into_bytes())
 }

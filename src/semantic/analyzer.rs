@@ -1,20 +1,58 @@
+use std::collections::HashMap;
+
 use crate::{
+    codegen::ir_builder::FunctionContext,
     error::{CompilerError, CompilerResult},
     grammar::ast::Ast,
+    semantic::type_check::Type,
+    tokenizer::token::Slice,
 };
 
-pub struct SemanticChecker {
+pub struct SemanticChecker<'a> {
     loop_depth: usize,
+    funcs: &'a HashMap<String, FunctionContext>,
 }
 
-pub fn check_semantics<'ip>(ast: &Ast<'ip>) -> CompilerResult<'ip, ()> {
-    let mut checker = SemanticChecker::new();
+pub fn check_semantics<'ip>(
+    ast: &Ast<'ip>,
+    funcs: &HashMap<String, FunctionContext>,
+) -> CompilerResult<'ip, ()> {
+    let mut checker = SemanticChecker::new(funcs);
     checker.check(ast)
 }
 
-impl SemanticChecker {
-    pub fn new() -> Self {
-        Self { loop_depth: 0 }
+impl<'a> SemanticChecker<'a> {
+    pub fn new(funcs: &'a HashMap<String, FunctionContext>) -> Self {
+        Self {
+            loop_depth: 0,
+            funcs,
+        }
+    }
+
+    pub fn check_main<'ip>(&self) -> CompilerResult<'ip, ()> {
+        if !self.funcs.contains_key("main") {
+            return Err(CompilerError::Semantic {
+                err: "main function not found".to_string(),
+                slice: Slice::new(0, 0, ""),
+            });
+        }
+
+        let func_sig = self.funcs["main"].signature.clone();
+        if func_sig.params.len() != 0 {
+            return Err(CompilerError::Semantic {
+                err: format!("main expects 0 parameters, found {}", func_sig.params.len()),
+                slice: Slice::new(0, 0, ""),
+            });
+        }
+
+        if func_sig.ret != Type::Unit {
+            return Err(CompilerError::Semantic {
+                err: "main function must return unit type".to_string(),
+                slice: Slice::new(0, 0, ""),
+            });
+        }
+
+        Ok(())
     }
 
     pub fn check<'ip>(&mut self, ast: &Ast<'ip>) -> CompilerResult<'ip, ()> {
@@ -83,10 +121,10 @@ impl SemanticChecker {
             Ast::Int(_) | Ast::Bool(_) | Ast::Identifier(_) => Ok(()),
             Ast::Items(_asts) => Ok(()),
             Ast::Func {
-                name: _,
-                params: _,
+                name,
+                params,
                 body: _,
-                ret: _,
+                ret,
             } => Ok(()),
             Ast::Return(_ast) => Ok(()),
             Ast::FuncCall { .. } => Ok(()),
