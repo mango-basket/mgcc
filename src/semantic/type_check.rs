@@ -13,6 +13,7 @@ pub struct FnSignature {
     pub ret: Type,
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
@@ -144,9 +145,9 @@ impl<'ip> TypeChecker {
     pub fn declare_function(&mut self, name: &str, signature: FnSignature) -> &mut FunctionContext {
         let ctx = FunctionContext {
             symbols: HashMap::new(),
-            // Start in the positive offset for params + ret addr + Optional return type
-            fp_offset: (1 + (signature.ret != Type::Unit) as i8)
-                * (signature.params.len() as i8 - 1),
+            // Start in the positive offset for params + ret addr + Optional return type + old fp
+            fp_offset: ((4 + (signature.ret != Type::Unit) as i8) + (signature.params.len() as i8))
+                * 2, // word
             signature,
         };
         self.functions.insert(name.to_string(), ctx);
@@ -186,7 +187,7 @@ impl<'ip> TypeChecker {
             Ast::Ref(inner) => self.check_ref(inner),
             Ast::Deref(inner) => self.check_deref(inner),
             Ast::Disp(inner) => self.check_disp(inner),
-            Ast::Items(_) => Ok(Type::Unit),
+            Ast::Items(items) => self.check_items(items),
             Ast::Func {
                 name,
                 params,
@@ -283,6 +284,10 @@ impl<'ip> TypeChecker {
         self.enter_function(&name_str)?;
         let mut params_ty = Vec::new();
 
+        if ret_ty != Type::Unit {
+            self.add_local_to_current("__return_addr", Type::Int)?;
+        }
+
         for (pname, ast) in params {
             let param_ty = self.ast_to_type(ast)?;
             self.add_local_to_current(&pname.slice.get_str(), param_ty.clone())?;
@@ -291,35 +296,32 @@ impl<'ip> TypeChecker {
 
         self.add_local_to_current("__return_instr_addr", Type::Int)?;
 
-        if ret_ty != Type::Unit {
-            self.add_local_to_current("__return_loc", Type::Int)?;
-        }
-
         // fp offset should be 0 now
-        let mut body_ty = None;
-        if let Ast::Statements(stmts) = body {
-            for stmt in stmts {
-                match stmt {
-                    Ast::Return(_) => {
-                        let ret_ty = self.infer_type(stmt)?;
-                        if body_ty.is_none() {
-                            body_ty = Some(self.infer_type(stmt)?);
-                        } else if body_ty.clone().unwrap() != ret_ty {
-                            return Err(CompilerError::UnexpectedType {
-                                got: ret_ty,
-                                expected: body_ty.unwrap().to_string(),
-                                slice: stmt.get_slice(),
-                            });
-                        }
-                    }
-                    _ => {
-                        self.infer_type(stmt)?;
-                    }
-                }
-            }
-        }
+        let body_ty = self.infer_type(body)?;
 
-        let body_ty = body_ty.unwrap_or(Type::Unit);
+        // if let Ast::Statements(stmts) = body {
+        //     for stmt in stmts {
+        //         match stmt {
+        //             Ast::Return(_) => {
+        //                 let ret_ty = self.infer_type(stmt)?;
+        //                 if body_ty.is_none() {
+        //                     body_ty = Some(self.infer_type(stmt)?);
+        //                 } else if body_ty.clone().unwrap() != ret_ty {
+        //                     return Err(CompilerError::UnexpectedType {
+        //                         got: ret_ty,
+        //                         expected: body_ty.unwrap().to_string(),
+        //                         slice: stmt.get_slice(),
+        //                     });
+        //                 }
+        //             }
+        //             _ => {
+        //                 self.infer_type(stmt)?;
+        //             }
+        //         }
+        //     }
+        // }
+
+        // let body_ty = body_ty.unwrap_or(Type::Unit);
         if body_ty != ret_ty {
             return Err(CompilerError::UnexpectedType {
                 got: body_ty,
@@ -509,6 +511,7 @@ impl<'ip> TypeChecker {
                     if_ty.to_string()
                 ), ifbody.get_slice()));
             }
+
             Type::Unit
         };
 
@@ -714,5 +717,13 @@ impl<'ip> TypeChecker {
             Ast::BinaryOp { right, .. } => Self::right_token(right),
             _ => None,
         }
+    }
+
+    fn check_items(&mut self, items: &'ip [Ast<'_>]) -> CompilerResult<'ip, Type> {
+        for item in items {
+            self.infer_type(item)?;
+        }
+
+        Ok(Type::Unit)
     }
 }

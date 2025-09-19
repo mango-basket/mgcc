@@ -30,7 +30,7 @@ pub struct Compiler {
 }
 
 impl<'ip> Compiler {
-    pub fn enter_function(&mut self, name: &str) -> CompilerResult<()> {
+    pub fn enter_function(&mut self, name: &str) -> CompilerResult<'ip, ()> {
         if self.functions.contains_key(name) {
             self.cur_func = Some(name.to_string());
             Ok(())
@@ -334,9 +334,9 @@ impl<'ip> Compiler {
             }
             Ast::Func {
                 name,
-                params,
+                params: _,
                 body,
-                ret,
+                ret: _,
             } => {
                 let fname = name.slice.get_str().to_string();
                 instrs.push(Instr::Lbl(fname.clone()));
@@ -365,7 +365,11 @@ impl<'ip> Compiler {
             Ast::Return(expr_opt) => {
                 if let Some(expr) = expr_opt {
                     instrs.extend(self.gen_instrs(expr)?); // compute return value
-                    instrs.push(Instr::Storer(FP, 2)); // store into return slot
+                    instrs.push(Instr::Storer(
+                        FP,
+                        self.lookup_local_slot("__return_addr").unwrap(),
+                    ));
+                    // store into return slot
                 }
 
                 // epilogue
@@ -391,13 +395,25 @@ impl<'ip> Compiler {
                 instrs.push(Instr::CallLbl(name.slice.get_str().to_string()));
 
                 // pop args (caller cleanup)
-                for _ in args {
-                    instrs.push(Instr::Popr(0));
+                let arg_count = args.len();
+                if arg_count > 0 {
+                    instrs.extend([
+                        Instr::Pushr(4),
+                        Instr::Push(2),
+                        Instr::Push(arg_count as u16),
+                        Instr::Mul,
+                        Instr::Add,
+                        Instr::Popr(4),
+                    ]);
                 }
+
+                // for _ in args {
+                //     instrs.push(Instr::Popr(0));
+                // }
 
                 // fetch return value (if not unit)
                 if sig.ret != Type::Unit {
-                    instrs.push(Instr::Popr(0)); // move return into r0 (or just leave on stack if you want)
+                    instrs.push(Instr::Popr(0)); // move return into r0
                     instrs.push(Instr::Pushr(0));
                 }
             }

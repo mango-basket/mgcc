@@ -139,7 +139,7 @@ impl<'ip> Parser<'ip> {
             }
         }
 
-        Ok(Ast::Statements(items))
+        Ok(Ast::Items(items))
     }
 
     fn parse_item(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
@@ -209,7 +209,7 @@ impl<'ip> Parser<'ip> {
                 _ => {
                     return Err(CompilerError::UnexpectedToken {
                         got: tok.clone(),
-                        expected: "",
+                        expected: "fn",
                     });
                 }
             }
@@ -522,7 +522,7 @@ impl<'ip> Parser<'ip> {
 
         // parse if-body block
         expect_match!(self, TokenKind::Lbrace)?;
-        let ifbody = self.parse_items(Some(TokenKind::Rbrace))?;
+        let ifbody = self.parse_statements()?;
         expect_match!(self, TokenKind::Rbrace)?;
 
         // parse optional else / else if chain
@@ -541,7 +541,7 @@ impl<'ip> Parser<'ip> {
                     Some(Box::new(self.parse_if_expr()?))
                 } else {
                     expect_match!(self, TokenKind::Lbrace)?;
-                    let else_stmts = self.parse_items(Some(TokenKind::Rbrace))?;
+                    let else_stmts = self.parse_statements()?;
                     expect_match!(self, TokenKind::Rbrace)?;
                     Some(Box::new(else_stmts))
                 }

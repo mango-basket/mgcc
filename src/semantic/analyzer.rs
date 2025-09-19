@@ -18,6 +18,7 @@ pub fn check_semantics<'ip>(
     funcs: &HashMap<String, FunctionContext>,
 ) -> CompilerResult<'ip, ()> {
     let mut checker = SemanticChecker::new(funcs);
+    checker.check_main()?;
     checker.check(ast)
 }
 
@@ -121,10 +122,10 @@ impl<'a> SemanticChecker<'a> {
             Ast::Int(_) | Ast::Bool(_) | Ast::Identifier(_) => Ok(()),
             Ast::Items(_asts) => Ok(()),
             Ast::Func {
-                name,
-                params,
+                name: _,
+                params: _,
                 body: _,
-                ret,
+                ret: _,
             } => Ok(()),
             Ast::Return(_ast) => Ok(()),
             Ast::FuncCall { .. } => Ok(()),
