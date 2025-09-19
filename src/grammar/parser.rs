@@ -561,7 +561,7 @@ impl<'ip> Parser<'ip> {
 
     fn parse_loop_expr(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
         expect_match!(self, TokenKind::Lbrace)?;
-        let body = self.parse_items(Some(TokenKind::Rbrace))?;
+        let body = self.parse_statements()?;
         expect_match!(self, TokenKind::Rbrace)?;
         Ok(Ast::Loop(Box::new(body)))
     }

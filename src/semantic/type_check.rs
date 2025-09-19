@@ -298,30 +298,6 @@ impl<'ip> TypeChecker {
 
         // fp offset should be 0 now
         let body_ty = self.infer_type(body)?;
-
-        // if let Ast::Statements(stmts) = body {
-        //     for stmt in stmts {
-        //         match stmt {
-        //             Ast::Return(_) => {
-        //                 let ret_ty = self.infer_type(stmt)?;
-        //                 if body_ty.is_none() {
-        //                     body_ty = Some(self.infer_type(stmt)?);
-        //                 } else if body_ty.clone().unwrap() != ret_ty {
-        //                     return Err(CompilerError::UnexpectedType {
-        //                         got: ret_ty,
-        //                         expected: body_ty.unwrap().to_string(),
-        //                         slice: stmt.get_slice(),
-        //                     });
-        //                 }
-        //             }
-        //             _ => {
-        //                 self.infer_type(stmt)?;
-        //             }
-        //         }
-        //     }
-        // }
-
-        // let body_ty = body_ty.unwrap_or(Type::Unit);
         if body_ty != ret_ty {
             return Err(CompilerError::UnexpectedType {
                 got: body_ty,
