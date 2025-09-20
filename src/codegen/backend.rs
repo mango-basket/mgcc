@@ -5,7 +5,7 @@ use computils::instr::Instr;
 use crate::{
     codegen::ir_builder::{Compiler, FunctionContext},
     error::CompilerResult,
-    grammar::ast::Ast,
+    grammar::ast::AstNode,
 };
 
 fn reg(num: u8) -> String {
@@ -69,7 +69,7 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
 }
 
 pub fn gen_instrs<'ip>(
-    ast: &'ip Ast<'ip>,
+    ast: &'ip AstNode<'ip>,
     functions: HashMap<String, FunctionContext>,
 ) -> CompilerResult<'ip, Vec<Instr>> {
     let mut compiler = Compiler {

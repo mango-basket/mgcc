@@ -2,14 +2,14 @@ use std::{error::Error, fmt::Display};
 
 use crate::{
     semantic::type_check::Type,
-    tokenizer::token::{Slice, Token},
+    tokenizer::token::{RawSlice, Token},
 };
 
 #[derive(Debug, Clone)]
 pub enum CompilerError<'ip> {
     UnknownChar {
         ch: char,
-        slice: Slice<'ip>,
+        slice: RawSlice<'ip>,
     },
     UnexpectedToken {
         got: Token<'ip>,
@@ -18,19 +18,19 @@ pub enum CompilerError<'ip> {
     UnexpectedType {
         got: Type,
         expected: String,
-        slice: Slice<'ip>,
+        slice: RawSlice<'ip>,
     },
     UnexpectedEof,
     OpTypeError {
         op: Token<'ip>,
-        lhs: Option<Token<'ip>>,
-        rhs: Token<'ip>,
+        lhs: Option<Type>,
+        rhs: Type,
     },
-    TypeError(String, Slice<'ip>),
-    UndefinedIdentifier(Token<'ip>),
+    TypeError(String, RawSlice<'ip>),
+    UndefinedIdentifier(RawSlice<'ip>),
     Semantic {
         err: String,
-        slice: Slice<'ip>,
+        slice: RawSlice<'ip>,
     },
 }
 
@@ -80,8 +80,8 @@ impl<'ip> Display for CompilerError<'ip> {
                         "TypeError at {}: cannot apply operator '{}' between '{}' and '{}'",
                         op.slice.get_row_col(),
                         op.slice.get_str(),
-                        lhs.slice.get_str(),
-                        rhs.slice.get_str(),
+                        lhs.to_string(),
+                        rhs.to_string(),
                     )
                 } else {
                     write!(
@@ -89,16 +89,16 @@ impl<'ip> Display for CompilerError<'ip> {
                         "TypeError at {}: cannot apply operator '{}' to '{}'",
                         op.slice.get_row_col(),
                         op.slice.get_str(),
-                        rhs.slice.get_str(),
+                        rhs.to_string(),
                     )
                 }
             }
-            Self::UndefinedIdentifier(ident) => {
+            Self::UndefinedIdentifier(slice) => {
                 write!(
                     f,
                     "NameError at {}: undefined identifier '{}'",
-                    ident.slice.get_row_col(),
-                    ident.slice.get_str()
+                    slice.get_row_col(),
+                    slice.get_str()
                 )
             }
             Self::Semantic { err, slice } => {

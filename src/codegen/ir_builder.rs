@@ -8,9 +8,9 @@ const FP: u8 = 5;
 
 use crate::{
     error::{CompilerError, CompilerResult},
-    grammar::ast::Ast,
+    grammar::ast::{AstKind, AstNode},
     semantic::type_check::{FnSignature, Type},
-    tokenizer::token::{Slice, Token, TokenKind},
+    tokenizer::token::{RawSlice, Token, TokenKind},
 };
 
 type SymbolTable = HashMap<String, (Option<i8>, Type)>;
@@ -37,7 +37,7 @@ impl<'ip> Compiler {
         } else {
             Err(CompilerError::Semantic {
                 err: format!("attempted to enter undeclared function `{}`", name),
-                slice: Slice::new(0, 0, ""),
+                slice: RawSlice::new(0, 0, ""),
             })
         }
     }
@@ -139,19 +139,19 @@ impl<'ip> Compiler {
         instrs
     }
 
-    pub fn gen_instrs(&mut self, ast: &'ip Ast<'ip>) -> CompilerResult<'ip, Vec<Instr>> {
+    pub fn gen_instrs(&mut self, ast: &'ip AstNode<'ip>) -> CompilerResult<'ip, Vec<Instr>> {
         let mut instrs = Vec::new();
 
-        match ast {
-            Ast::Int(tok) => {
-                if let TokenKind::Int(num) = tok.kind {
-                    instrs.push(Instr::Push(num))
+        match &ast.kind {
+            AstKind::Int(kind) => {
+                if let TokenKind::Int(num) = kind {
+                    instrs.push(Instr::Push(*num))
                 } else {
                     unreachable!()
                 }
             }
-            Ast::UnaryOp { op, operand } => {
-                instrs.extend(self.gen_instrs(operand)?);
+            AstKind::UnaryOp { op, operand } => {
+                instrs.extend(self.gen_instrs(&operand)?);
                 match op.kind {
                     TokenKind::Plus => {}
                     TokenKind::Minus => instrs.push(Instr::Neg),
@@ -165,26 +165,29 @@ impl<'ip> Compiler {
                     }
                 }
             }
-            Ast::BinaryOp { left, op, right } => instrs.extend(self.gen_bin_op(left, op, right)?),
-            Ast::Identifier(token) => {
-                if let TokenKind::Identifier(ref name) = token.kind {
+            AstKind::BinaryOp { left, op, right } => {
+                let sub_instrs = self.gen_bin_op(&left, &op, &right)?;
+                instrs.extend(sub_instrs)
+            }
+            AstKind::Identifier(kind) => {
+                if let TokenKind::Identifier(ref name) = kind {
                     if let Some(ofst) = self.lookup_local_slot(name) {
                         instrs.push(Instr::Loadr(FP, ofst));
                     } else {
-                        return Err(CompilerError::UndefinedIdentifier(token.clone()));
+                        return Err(CompilerError::UndefinedIdentifier(ast.get_slice()));
                     }
                 } else {
                     unreachable!();
                 }
             }
-            Ast::Bool(token) => {
-                if let TokenKind::Bool(bool) = token.kind {
-                    instrs.push(Instr::Push(bool as u16));
+            AstKind::Bool(kind) => {
+                if let TokenKind::Bool(bool) = kind {
+                    instrs.push(Instr::Push(*bool as u16));
                 } else {
                     unreachable!()
                 }
             }
-            Ast::VarDef {
+            AstKind::VarDef {
                 name,
                 vartype: _,
                 rhs,
@@ -196,43 +199,43 @@ impl<'ip> Compiler {
 
                 let slot = self.alloc_local(name.slice.get_str(), ty);
 
-                instrs.extend(self.gen_instrs(rhs)?);
+                instrs.extend(self.gen_instrs(&rhs)?);
                 instrs.push(Instr::Storer(FP, slot));
             }
-            Ast::Statements(asts) => {
+            AstKind::Statements(asts) => {
                 for ast in asts {
-                    instrs.extend(self.gen_instrs(ast)?);
+                    instrs.extend(self.gen_instrs(&ast)?);
                 }
             }
-            Ast::Reassign { lhs, rhs } => match &**lhs {
-                Ast::Identifier(ident_tok) => {
-                    let ofst = if let TokenKind::Identifier(ref ident) = ident_tok.kind {
+            AstKind::Reassign { lhs, rhs } => match &lhs.kind {
+                AstKind::Identifier(ident_kind) => {
+                    let ofst = if let TokenKind::Identifier(ref ident) = ident_kind {
                         if let Some(ofst) = self.lookup_local_slot(ident) {
                             ofst
                         } else {
-                            return Err(CompilerError::UndefinedIdentifier(ident_tok.clone()));
+                            return Err(CompilerError::UndefinedIdentifier(lhs.get_slice()));
                         }
                     } else {
                         unreachable!()
                     };
 
-                    instrs.extend(self.gen_instrs(rhs)?);
+                    instrs.extend(self.gen_instrs(&rhs)?);
                     instrs.push(Instr::Storer(FP, ofst));
                 }
-                Ast::Deref(inner) => {
-                    instrs.extend(self.gen_instrs(inner)?);
-                    instrs.extend(self.gen_instrs(rhs)?);
+                AstKind::Deref(inner) => {
+                    instrs.extend(self.gen_instrs(&inner)?);
+                    instrs.extend(self.gen_instrs(&rhs)?);
                     instrs.push(Instr::Storep);
                 }
                 _ => {}
             },
-            Ast::IfElse {
+            AstKind::IfElse {
                 condition,
                 ifbody,
                 elsebody,
             } => {
                 // generate code for condition
-                instrs.extend(self.gen_instrs(condition)?);
+                instrs.extend(self.gen_instrs(&condition)?);
 
                 let lbl_else = self.next_label();
                 let lbl_end = self.next_label();
@@ -241,7 +244,7 @@ impl<'ip> Compiler {
                 instrs.extend([Instr::Push(0), Instr::Cmp, Instr::JeqLbl(lbl_else.clone())]); // assuming 0 = false, 1 = true
 
                 // generate if-body
-                instrs.extend(self.gen_instrs(ifbody)?);
+                instrs.extend(self.gen_instrs(&ifbody)?);
 
                 // after if-body, jump to end
                 instrs.push(Instr::JmpLbl(lbl_end.clone()));
@@ -249,25 +252,25 @@ impl<'ip> Compiler {
                 // else-body
                 instrs.push(Instr::Lbl(lbl_else));
                 if let Some(else_ast) = elsebody {
-                    instrs.extend(self.gen_instrs(else_ast)?);
+                    instrs.extend(self.gen_instrs(&else_ast)?);
                 }
 
                 // end label
                 instrs.push(Instr::Lbl(lbl_end));
             }
-            Ast::Loop(body) => {
+            AstKind::Loop(body) => {
                 let head_lbl = self.next_label();
                 let end_lbl = self.next_label();
 
                 self.loop_stack.push((head_lbl.clone(), end_lbl.clone()));
 
                 instrs.push(Instr::Lbl(head_lbl.clone()));
-                instrs.extend(self.gen_instrs(body)?);
+                instrs.extend(self.gen_instrs(&body)?);
                 instrs.extend([Instr::JmpLbl(head_lbl.clone()), Instr::Lbl(end_lbl.clone())]);
 
                 self.loop_stack.pop();
             }
-            Ast::Continue => instrs.push(Instr::JmpLbl(
+            AstKind::Continue => instrs.push(Instr::JmpLbl(
                 self.loop_stack
                     .last()
                     .ok_or(
@@ -279,9 +282,9 @@ impl<'ip> Compiler {
                     .0
                     .clone(),
             )),
-            Ast::Break(ref opt_expr) => {
+            AstKind::Break(ref opt_expr) => {
                 if let Some(expr) = opt_expr {
-                    instrs.extend(self.gen_instrs(expr)?);
+                    instrs.extend(self.gen_instrs(&expr)?);
                 };
 
                 instrs.push(Instr::JmpLbl(
@@ -297,10 +300,10 @@ impl<'ip> Compiler {
                         .clone(),
                 ));
             }
-            Ast::Ref(inner) => {
-                match **inner {
-                    Ast::Identifier(ref ident_tok) => {
-                        if let TokenKind::Identifier(ref name) = ident_tok.kind {
+            AstKind::Ref(inner) => {
+                match inner.kind {
+                    AstKind::Identifier(ref ident_kind) => {
+                        if let TokenKind::Identifier(ref name) = ident_kind {
                             if let Some(slot) = self.lookup_local_slot(name) {
                                 instrs.push(Instr::Pushr(5)); // push fp onto stack
                                 instrs.push(Instr::Push(slot as u16)); // push addr rel to fp
@@ -308,31 +311,31 @@ impl<'ip> Compiler {
                                 instrs.push(Instr::Mul);
                                 instrs.push(Instr::Sub); // addr = fp - slot * 2
                             } else {
-                                return Err(CompilerError::UndefinedIdentifier(ident_tok.clone()));
+                                return Err(CompilerError::UndefinedIdentifier(inner.get_slice()));
                             }
                         } else {
                             unreachable!();
                         }
                     }
-                    Ast::Deref(ref inner) => instrs.extend(self.gen_instrs(inner)?),
+                    AstKind::Deref(ref inner) => instrs.extend(self.gen_instrs(&inner)?),
                     _ => unreachable!(),
                 }
             }
-            Ast::Deref(inner) => {
-                instrs.extend(self.gen_instrs(inner)?);
+            AstKind::Deref(inner) => {
+                instrs.extend(self.gen_instrs(&inner)?);
                 instrs.push(Instr::Loadp);
             }
-            Ast::Disp(printable) => {
-                instrs.extend(self.gen_instrs(printable)?);
+            AstKind::Disp(printable) => {
+                instrs.extend(self.gen_instrs(&printable)?);
                 instrs.push(Instr::Popr(0));
                 instrs.push(Instr::CallLbl("print".into())) // prints r0
             }
-            Ast::Items(asts) => {
+            AstKind::Items(asts) => {
                 for ast in asts {
-                    instrs.extend(self.gen_instrs(ast)?);
+                    instrs.extend(self.gen_instrs(&ast)?);
                 }
             }
-            Ast::Func {
+            AstKind::Func {
                 name,
                 params: _,
                 body,
@@ -351,7 +354,7 @@ impl<'ip> Compiler {
                 ]);
 
                 // body
-                instrs.extend(self.gen_instrs(body)?);
+                instrs.extend(self.gen_instrs(&body)?);
 
                 // default epilogue (in case no explicit return)
                 instrs.extend([
@@ -362,9 +365,9 @@ impl<'ip> Compiler {
 
                 self.exit_function();
             }
-            Ast::Return(expr_opt) => {
+            AstKind::Return(expr_opt) => {
                 if let Some(expr) = expr_opt {
-                    instrs.extend(self.gen_instrs(expr)?); // compute return value
+                    instrs.extend(self.gen_instrs(&expr)?); // compute return value
                     instrs.push(Instr::Storer(
                         FP,
                         self.lookup_local_slot("__return_addr").unwrap(),
@@ -375,7 +378,7 @@ impl<'ip> Compiler {
                 // epilogue
                 instrs.extend([Instr::Mov(SP, FP), Instr::Popr(FP), Instr::Ret]);
             }
-            Ast::FuncCall { name, args } => {
+            AstKind::FuncCall { name, args } => {
                 let sig = self
                     .functions
                     .get(name.slice.get_str())
@@ -424,9 +427,9 @@ impl<'ip> Compiler {
 
     fn gen_bin_op(
         &mut self,
-        left: &'ip Box<Ast<'_>>,
+        left: &'ip AstNode<'_>,
         op: &'ip Token<'_>,
-        right: &'ip Box<Ast<'_>>,
+        right: &'ip AstNode<'_>,
     ) -> Result<Vec<Instr>, CompilerError<'ip>> {
         let mut instrs = Vec::new();
 

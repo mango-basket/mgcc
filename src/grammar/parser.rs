@@ -1,9 +1,9 @@
 use crate::{
     error::{CompilerError, CompilerResult},
-    grammar::ast::Ast,
+    grammar::ast::{AstKind, AstNode},
     tokenizer::{
         lexer::Lexer,
-        token::{Keyword, Token, TokenKind},
+        token::{Keyword, RawSlice, Token, TokenKind},
     },
 };
 use std::{collections::VecDeque, iter::Peekable};
@@ -11,7 +11,7 @@ use std::{collections::VecDeque, iter::Peekable};
 macro_rules! expect_match {
     // with explicit expected string
     ($parser:expr, $($pats:pat_param)|+ , $expected:expr) => {{
-        let tok = $parser.next_token().ok_or(CompilerError::UnexpectedEof)??;
+        let tok = $parser.next().ok_or(CompilerError::UnexpectedEof)??;
         if matches!(tok.kind, $($pats)|+) {
             Ok(tok)
         } else {
@@ -24,7 +24,7 @@ macro_rules! expect_match {
 
     // auto-generate expected (take first pattern only)
     ($parser:expr, $pat:pat_param $(| $rest:pat_param)*) => {{
-        let tok = $parser.next_token().ok_or(CompilerError::UnexpectedEof)??;
+        let tok = $parser.next().ok_or(CompilerError::UnexpectedEof)??;
         if matches!(tok.kind, $pat $(| $rest)*) {
             Ok(tok)
         } else {
@@ -52,13 +52,19 @@ const PRECEDENCE: &[&[TokenKind]] = &[
 pub struct Parser<'ip> {
     lexer: Peekable<Lexer<'ip>>,
     buffer: VecDeque<CompilerResult<'ip, Token<'ip>>>,
+    pos: isize,
+    slice_stack: Vec<usize>,
+    input: &'ip str,
 }
 
 impl<'ip> Parser<'ip> {
-    pub fn new(lexer: Lexer<'ip>) -> Self {
+    pub fn new(lexer: Lexer<'ip>, input: &'ip str) -> Self {
         Self {
             lexer: lexer.peekable(),
             buffer: VecDeque::new(),
+            slice_stack: Vec::new(),
+            pos: -1,
+            input,
         }
     }
 
@@ -73,11 +79,33 @@ impl<'ip> Parser<'ip> {
         self.buffer.get(n)
     }
 
-    pub fn next_token(&mut self) -> Option<CompilerResult<'ip, Token<'ip>>> {
+    pub fn start_slice(&mut self) -> CompilerResult<'ip, ()> {
+        if let Some(Ok(tok)) = self.peek().cloned() {
+            self.slice_stack.push(tok.slice.start);
+        }
+
+        Ok(())
+    }
+
+    pub fn gen_node(&mut self, kind: AstKind<'ip>) -> AstNode<'ip> {
+        let start = self.slice_stack.pop().expect("slice stack is empty");
+        let end = self.pos as usize;
+        AstNode::new(kind, RawSlice::new(start, end, self.input))
+    }
+
+    pub fn next(&mut self) -> Option<CompilerResult<'ip, Token<'ip>>> {
         if let Some(tok) = self.buffer.pop_front() {
+            if let Ok(tok) = &tok {
+                self.pos = tok.slice.end as isize;
+            }
+            Some(tok)
+        } else if let Some(tok) = self.lexer.next() {
+            if let Ok(tok) = &tok {
+                self.pos = tok.slice.end as isize;
+            }
             Some(tok)
         } else {
-            self.lexer.next()
+            None
         }
     }
 
@@ -86,7 +114,7 @@ impl<'ip> Parser<'ip> {
         F: Fn(&Token<'ip>) -> bool,
     {
         match self.peek() {
-            Some(Ok(tok)) if f(tok) => self.next_token(),
+            Some(Ok(tok)) if f(tok) => self.next(),
             _ => None,
         }
     }
@@ -112,14 +140,15 @@ impl<'ip> Parser<'ip> {
 
     // -- Parse functions --
 
-    pub fn parse(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    pub fn parse(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
         self.parse_items(None)
     }
 
     fn parse_items(
         &mut self,
         end: Option<TokenKind>, // pass EOF at top-level, RBrace in a block
-    ) -> CompilerResult<'ip, Ast<'ip>> {
+    ) -> CompilerResult<'ip, AstNode<'ip>> {
+        self.start_slice()?;
         let mut items = Vec::new();
 
         loop {
@@ -139,10 +168,11 @@ impl<'ip> Parser<'ip> {
             }
         }
 
-        Ok(Ast::Items(items))
+        Ok(self.gen_node(AstKind::Items(items)))
     }
 
-    fn parse_item(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_item(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        self.start_slice()?;
         if let Some(Ok(tok)) = self.peek() {
             match tok.kind {
                 TokenKind::Keyword(Keyword::Fn) => {
@@ -199,12 +229,12 @@ impl<'ip> Parser<'ip> {
 
                     expect_match!(self, TokenKind::Rbrace)?;
 
-                    return Ok(Ast::Func {
+                    return Ok(self.gen_node(AstKind::Func {
                         name,
                         params,
                         ret,
                         body: Box::new(body),
-                    });
+                    }));
                 }
                 _ => {
                     return Err(CompilerError::UnexpectedToken {
@@ -217,7 +247,8 @@ impl<'ip> Parser<'ip> {
         Err(CompilerError::UnexpectedEof)
     }
 
-    fn parse_statements(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_statements(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        self.start_slice()?;
         let mut stmts = Vec::new();
 
         loop {
@@ -231,20 +262,21 @@ impl<'ip> Parser<'ip> {
             }
         }
 
-        Ok(Ast::Statements(stmts))
+        Ok(self.gen_node(AstKind::Statements(stmts)))
     }
 
-    fn parse_type(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_type(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        self.start_slice()?;
         if let Some(Ok(tok)) = self.peek() {
             match &tok.kind {
                 TokenKind::Ref => {
-                    let _ = self.next_token();
+                    let _ = self.next();
                     let inner = self.parse_type()?;
-                    Ok(Ast::Ref(Box::new(inner)))
+                    Ok(self.gen_node(AstKind::Ref(Box::new(inner))))
                 }
                 TokenKind::Identifier(_) => {
                     let ident = expect_match!(self, TokenKind::Identifier(_))?;
-                    Ok(Ast::Identifier(ident))
+                    Ok(self.gen_node(AstKind::Identifier(ident.kind.clone())))
                 }
                 _ => Err(CompilerError::UnexpectedToken {
                     got: tok.clone(),
@@ -256,7 +288,8 @@ impl<'ip> Parser<'ip> {
         }
     }
 
-    fn parse_vardef(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_vardef(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        self.start_slice()?;
         self.bump()?; // consume var keyword
         let name = expect_match!(self, TokenKind::Identifier(_))?;
 
@@ -264,7 +297,7 @@ impl<'ip> Parser<'ip> {
         let mut vartype = None;
         if let Some(Ok(next)) = self.peek() {
             if matches!(next.kind, TokenKind::Colon) {
-                let _ = self.next_token();
+                let _ = self.next();
                 let t = self.parse_type()?;
                 vartype = Some(Box::new(t))
             }
@@ -274,14 +307,15 @@ impl<'ip> Parser<'ip> {
         let rhs = self.parse_expression()?;
         self.consume_line_end()?;
 
-        Ok(Ast::VarDef {
+        Ok(self.gen_node(AstKind::VarDef {
             name,
             vartype,
             rhs: Box::new(rhs),
-        })
+        }))
     }
 
-    fn parse_reassign(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_reassign(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        self.start_slice()?;
         let lhs = self.parse_unary()?;
 
         if let Some(Ok(next)) = self.peek() {
@@ -289,10 +323,10 @@ impl<'ip> Parser<'ip> {
                 self.bump()?; // eq token
                 let rhs = self.parse_expression()?;
                 self.consume_line_end()?;
-                return Ok(Ast::Reassign {
+                return Ok(self.gen_node(AstKind::Reassign {
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
-                });
+                }));
             }
         }
 
@@ -300,7 +334,8 @@ impl<'ip> Parser<'ip> {
         Ok(lhs)
     }
 
-    fn parse_break_stmt(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_break_stmt(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        self.start_slice()?;
         self.bump()?;
 
         let expr = if !matches!(
@@ -316,10 +351,11 @@ impl<'ip> Parser<'ip> {
         };
 
         self.consume_line_end()?;
-        Ok(Ast::Break(expr))
+        Ok(self.gen_node(AstKind::Break(expr)))
     }
 
-    fn parse_ret_stmt(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_ret_stmt(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        self.start_slice()?;
         self.bump()?;
 
         let expr = if !matches!(
@@ -335,16 +371,18 @@ impl<'ip> Parser<'ip> {
         };
 
         self.consume_line_end()?;
-        Ok(Ast::Return(expr))
+        Ok(self.gen_node(AstKind::Return(expr)))
     }
 
-    fn parse_statement(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_statement(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        self.start_slice()?;
         if let Some(kind) = self.peek_kind() {
             match kind {
                 TokenKind::Keyword(Keyword::Var) => self.parse_vardef(),
                 TokenKind::Keyword(Keyword::Disp) => {
                     self.bump()?;
-                    Ok(Ast::Disp(Box::new(self.parse_expression()?)))
+                    let expr = self.parse_expression()?;
+                    Ok(self.gen_node(AstKind::Disp(Box::new(expr))))
                 }
                 TokenKind::Identifier(_) | TokenKind::Star => self.parse_reassign(),
                 TokenKind::Keyword(Keyword::Break) => self.parse_break_stmt(),
@@ -352,7 +390,7 @@ impl<'ip> Parser<'ip> {
                 TokenKind::Keyword(Keyword::Continue) => {
                     self.bump()?;
                     self.consume_line_end()?;
-                    Ok(Ast::Continue)
+                    Ok(self.gen_node(AstKind::Continue))
                 }
 
                 // If its a line end, skip that and get a new statement (for cases when newlinw
@@ -375,12 +413,12 @@ impl<'ip> Parser<'ip> {
         }
     }
 
-    fn parse_expression(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_expression(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
         fn parse_level<'ip>(
             parser: &mut Parser<'ip>,
             table: &[&[TokenKind]],
             index: usize,
-        ) -> CompilerResult<'ip, Ast<'ip>> {
+        ) -> CompilerResult<'ip, AstNode<'ip>> {
             if index >= table.len() {
                 return parser.parse_unary(); // bottom-most fallback
             }
@@ -395,41 +433,45 @@ impl<'ip> Parser<'ip> {
         &mut self,
         operators: &[TokenKind],
         subparser: F,
-    ) -> CompilerResult<'ip, Ast<'ip>>
+    ) -> CompilerResult<'ip, AstNode<'ip>>
     where
-        F: Fn(&mut Self) -> CompilerResult<'ip, Ast<'ip>>,
+        F: Fn(&mut Self) -> CompilerResult<'ip, AstNode<'ip>>,
     {
+        self.start_slice()?;
         let mut node = subparser(self)?;
 
         while let Some(Ok(tok)) =
             self.next_if(|tok| matches!(tok, x if operators.contains(&x.kind)))
         {
-            node = Ast::BinaryOp {
+            let sub = subparser(self)?;
+            node = self.gen_node(AstKind::BinaryOp {
                 left: Box::new(node),
                 op: tok,
-                right: Box::new(subparser(self)?),
-            };
+                right: Box::new(sub),
+            });
         }
 
         Ok(node)
     }
 
-    fn parse_unary(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_unary(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
         // Peek to see if next token is a unary operator (without consuming it)
         if let Some(kind) = self.peek_kind() {
             match kind {
                 TokenKind::Minus | TokenKind::Plus | TokenKind::Not | TokenKind::Bnot => {
-                    let op = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
+                    self.start_slice()?;
+                    let op = self.next().ok_or(CompilerError::UnexpectedEof)??;
                     let operand = self.parse_unary()?;
-                    return Ok(Ast::UnaryOp {
+                    return Ok(self.gen_node(AstKind::UnaryOp {
                         op,
                         operand: Box::new(operand),
-                    });
+                    }));
                 }
                 TokenKind::Star => {
-                    let _ = self.next_token().ok_or(CompilerError::UnexpectedEof)??;
+                    self.start_slice()?;
+                    let _ = self.next().ok_or(CompilerError::UnexpectedEof)??;
                     let operand = self.parse_unary()?;
-                    return Ok(Ast::Deref(Box::new(operand)));
+                    return Ok(self.gen_node(AstKind::Deref(Box::new(operand))));
                 }
                 _ => {}
             }
@@ -439,28 +481,34 @@ impl<'ip> Parser<'ip> {
         self.parse_ref()
     }
 
-    fn parse_ref(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_ref(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
         if let Some(Ok(toke_ref)) = self.peek() {
             if matches!(toke_ref.kind, TokenKind::Ref) {
+                self.start_slice()?;
                 self.bump()?;
                 let operand = self.parse_ref()?;
-                return Ok(Ast::Ref(Box::new(operand)));
+                return Ok(self.gen_node(AstKind::Ref(Box::new(operand))));
             }
         }
 
         self.parse_atom()
     }
 
-    fn parse_atom(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_atom(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        self.start_slice()?;
         let token = self.bump()?;
 
         match token.kind {
-            TokenKind::Int(_) => Ok(Ast::Int(token)),
-            TokenKind::Bool(_) => Ok(Ast::Bool(token)),
+            TokenKind::Int(_) => Ok(self.gen_node(AstKind::Int(token.kind))),
+            TokenKind::Bool(_) => Ok(self.gen_node(AstKind::Bool(token.kind))),
             TokenKind::Identifier(_) => self.parse_func_call(&token),
 
             TokenKind::Lparen => {
                 let expr = self.parse_expression()?;
+
+                // pop off excess slice
+                self.slice_stack.pop().expect("slice stack is empty");
+
                 expect_match!(self, TokenKind::Rparen)?;
                 Ok(expr)
             }
@@ -476,12 +524,9 @@ impl<'ip> Parser<'ip> {
         }
     }
 
-    fn parse_func_call(&mut self, token: &Token<'ip>) -> Result<Ast<'ip>, CompilerError<'ip>> {
-        if let Some(kind) = self.peek_kind() {
-            if !matches!(kind, TokenKind::Lparen) {
-                return Ok(Ast::Identifier(token.clone()));
-            }
-
+    fn parse_func_call(&mut self, token: &Token<'ip>) -> Result<AstNode<'ip>, CompilerError<'ip>> {
+        // slice already started in atom
+        if let Some(TokenKind::Lparen) = self.peek_kind() {
             self.bump()?; // consume '('
 
             let mut args = Vec::new();
@@ -507,16 +552,18 @@ impl<'ip> Parser<'ip> {
 
             expect_match!(self, TokenKind::Rparen)?;
 
-            Ok(Ast::FuncCall {
+            Ok(self.gen_node(AstKind::FuncCall {
                 name: token.clone(),
                 args,
-            })
+            }))
         } else {
-            Ok(Ast::Identifier(token.clone()))
+            Ok(self.gen_node(AstKind::Identifier(token.kind.clone())))
         }
     }
 
-    fn parse_if_expr(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_if_expr(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        // slice already started in atom
+
         // parse condition
         let condition = self.parse_expression()?;
 
@@ -537,7 +584,7 @@ impl<'ip> Parser<'ip> {
 
             if let Some(Ok(peek)) = self.peek() {
                 if matches!(peek.kind, TokenKind::Keyword(Keyword::If)) {
-                    self.next_token(); // consume 'if'
+                    self.next(); // consume 'if'
                     Some(Box::new(self.parse_if_expr()?))
                 } else {
                     expect_match!(self, TokenKind::Lbrace)?;
@@ -552,17 +599,19 @@ impl<'ip> Parser<'ip> {
             None
         };
 
-        Ok(Ast::IfElse {
+        Ok(self.gen_node(AstKind::IfElse {
             condition: Box::new(condition),
             ifbody: Box::new(ifbody),
             elsebody,
-        })
+        }))
     }
 
-    fn parse_loop_expr(&mut self) -> CompilerResult<'ip, Ast<'ip>> {
+    fn parse_loop_expr(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        // slice already started in atom
+
         expect_match!(self, TokenKind::Lbrace)?;
         let body = self.parse_statements()?;
         expect_match!(self, TokenKind::Rbrace)?;
-        Ok(Ast::Loop(Box::new(body)))
+        Ok(self.gen_node(AstKind::Loop(Box::new(body))))
     }
 }

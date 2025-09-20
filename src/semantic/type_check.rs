@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     codegen::ir_builder::FunctionContext,
     error::{CompilerError, CompilerResult},
-    grammar::ast::Ast,
+    grammar::ast::{AstKind, AstNode},
     tokenizer::token::{Token, TokenKind},
 };
 
@@ -54,7 +54,7 @@ fn default_type_env() -> TypeEnv {
 }
 
 pub fn check_types<'ip>(
-    ast: &'ip Ast<'ip>,
+    ast: &'ip AstNode<'ip>,
 ) -> CompilerResult<'ip, HashMap<String, FunctionContext>> {
     let mut type_checker = TypeChecker {
         functions: HashMap::new(),
@@ -166,43 +166,43 @@ impl<'ip> TypeChecker {
         self.functions.contains_key(name)
     }
 
-    fn infer_type(&mut self, ast: &'ip Ast<'ip>) -> CompilerResult<'ip, Type> {
-        match ast {
-            Ast::Int(_) => Ok(Type::Int),
-            Ast::Bool(_) => Ok(Type::Bool),
-            Ast::UnaryOp { op, operand } => self.check_unary(op, operand),
-            Ast::BinaryOp { left, op, right } => self.check_binary(left, op, right),
-            Ast::Identifier(token) => self.check_identifier(token),
-            Ast::VarDef { name, vartype, rhs } => self.check_var_def(name, vartype, rhs),
-            Ast::Reassign { lhs, rhs } => self.check_reassign(lhs, rhs),
-            Ast::Statements(stmts) => self.check_statements(stmts),
-            Ast::IfElse {
+    fn infer_type(&mut self, ast: &'ip AstNode<'ip>) -> CompilerResult<'ip, Type> {
+        match &ast.kind {
+            AstKind::Int(_) => Ok(Type::Int),
+            AstKind::Bool(_) => Ok(Type::Bool),
+            AstKind::UnaryOp { op, operand } => self.check_unary(&op, &operand),
+            AstKind::BinaryOp { left, op, right } => self.check_binary(&left, &op, &right),
+            AstKind::Identifier(_) => self.check_identifier(ast),
+            AstKind::VarDef { name, vartype, rhs } => self.check_var_def(&name, &vartype, &rhs),
+            AstKind::Reassign { lhs, rhs } => self.check_reassign(&lhs, &rhs),
+            AstKind::Statements(stmts) => self.check_statements(&stmts),
+            AstKind::IfElse {
                 condition,
                 ifbody,
                 elsebody,
-            } => self.check_if(condition, ifbody, elsebody),
-            Ast::Loop(body) => self.check_loop(body),
-            Ast::Continue => Ok(Type::Unit),
-            Ast::Break(expr_opt) => self.check_break(expr_opt),
-            Ast::Ref(inner) => self.check_ref(inner),
-            Ast::Deref(inner) => self.check_deref(inner),
-            Ast::Disp(inner) => self.check_disp(inner),
-            Ast::Items(items) => self.check_items(items),
-            Ast::Func {
+            } => self.check_if(&condition, &ifbody, &elsebody),
+            AstKind::Loop(body) => self.check_loop(&body),
+            AstKind::Continue => Ok(Type::Unit),
+            AstKind::Break(expr_opt) => self.check_break(&expr_opt),
+            AstKind::Ref(inner) => self.check_ref(&inner),
+            AstKind::Deref(inner) => self.check_deref(&inner),
+            AstKind::Disp(inner) => self.check_disp(&inner),
+            AstKind::Items(items) => self.check_items(&items),
+            AstKind::Func {
                 name,
                 params,
                 body,
                 ret,
-            } => self.check_func(name, params, body, ret),
-            Ast::Return(ret_opt) => self.check_return(ret_opt),
-            Ast::FuncCall { name, args } => self.check_func_call(name, args),
+            } => self.check_func(&name, &params, &body, &ret),
+            AstKind::Return(ret_opt) => self.check_return(&ret_opt),
+            AstKind::FuncCall { name, args } => self.check_func_call(&name, &args),
         }
     }
 
     fn check_func_call(
         &mut self,
         name: &'ip Token<'_>,
-        params: &'ip Vec<Ast<'_>>,
+        params: &'ip Vec<AstNode<'_>>,
     ) -> Result<Type, CompilerError<'ip>> {
         let params_ty = params
             .iter()
@@ -211,7 +211,7 @@ impl<'ip> TypeChecker {
 
         let func = self
             .get_function(&name.slice.get_str())
-            .ok_or(CompilerError::UndefinedIdentifier(name.clone()))?;
+            .ok_or(CompilerError::UndefinedIdentifier(name.slice.clone()))?;
 
         let expected_len = func.signature.params.len();
         if params.len() != expected_len {
@@ -242,7 +242,7 @@ impl<'ip> TypeChecker {
 
     fn check_return(
         &mut self,
-        ret_opt: &'ip Option<Box<Ast<'_>>>,
+        ret_opt: &'ip Option<Box<AstNode<'_>>>,
     ) -> Result<Type, CompilerError<'ip>> {
         if let Some(ret_ast) = ret_opt {
             Ok(self.infer_type(ret_ast)?)
@@ -254,9 +254,9 @@ impl<'ip> TypeChecker {
     fn check_func(
         &mut self,
         name: &'ip Token<'_>,
-        params: &'ip [(Token<'_>, Ast<'_>)],
-        body: &'ip Ast<'_>,
-        ret: &'ip Option<Box<Ast<'_>>>,
+        params: &'ip [(Token<'_>, AstNode<'_>)],
+        body: &'ip AstNode<'_>,
+        ret: &'ip Option<Box<AstNode<'_>>>,
     ) -> Result<Type, CompilerError<'ip>> {
         let name_str = name.slice.get_str();
 
@@ -310,10 +310,10 @@ impl<'ip> TypeChecker {
             .get_function_mut(
                 self.cur_func
                     .clone()
-                    .ok_or(CompilerError::UndefinedIdentifier(name.clone()))?
+                    .ok_or(CompilerError::UndefinedIdentifier(name.slice.clone()))?
                     .as_str(),
             )
-            .ok_or(CompilerError::UndefinedIdentifier(name.clone()))?;
+            .ok_or(CompilerError::UndefinedIdentifier(name.slice.clone()))?;
 
         func.signature = FnSignature {
             params: params_ty,
@@ -324,7 +324,7 @@ impl<'ip> TypeChecker {
         Ok(Type::Unit)
     }
 
-    fn check_disp(&mut self, inner: &'ip Box<Ast<'ip>>) -> Result<Type, CompilerError<'ip>> {
+    fn check_disp(&mut self, inner: &'ip Box<AstNode<'ip>>) -> Result<Type, CompilerError<'ip>> {
         let inner_ty = self.infer_type(inner)?;
         if inner_ty == Type::Unit {
             return Err(CompilerError::TypeError(
@@ -336,7 +336,7 @@ impl<'ip> TypeChecker {
         Ok(Type::Unit)
     }
 
-    fn check_deref(&mut self, inner: &'ip Box<Ast<'ip>>) -> Result<Type, CompilerError<'ip>> {
+    fn check_deref(&mut self, inner: &'ip Box<AstNode<'ip>>) -> Result<Type, CompilerError<'ip>> {
         let inner_ty = self.infer_type(inner)?;
         if let Type::Ref(ty) = inner_ty {
             Ok(*ty)
@@ -348,13 +348,13 @@ impl<'ip> TypeChecker {
         }
     }
 
-    fn check_ref(&mut self, inner: &'ip Box<Ast<'ip>>) -> Result<Type, CompilerError<'ip>> {
-        match inner.as_ref() {
-            Ast::Identifier(_) | Ast::Deref(_) => {
+    fn check_ref(&mut self, inner: &'ip AstNode<'ip>) -> Result<Type, CompilerError<'ip>> {
+        match inner.kind {
+            AstKind::Identifier(_) | AstKind::Deref(_) => {
                 let inner_ty = self.infer_type(inner)?;
                 Ok(Type::Ref(Box::new(inner_ty)))
             }
-            Ast::Ref(_) => {
+            AstKind::Ref(_) => {
                 let inner_ty = self.infer_type(inner)?;
                 Ok(Type::Ref(Box::new(inner_ty)))
             }
@@ -367,7 +367,7 @@ impl<'ip> TypeChecker {
 
     fn check_break(
         &mut self,
-        expr_opt: &'ip Option<Box<Ast<'_>>>,
+        expr_opt: &'ip Option<Box<AstNode<'_>>>,
     ) -> Result<Type, CompilerError<'ip>> {
         // type of this break (unit if no expression)
         let this_ty = if let Some(expr) = expr_opt {
@@ -405,7 +405,7 @@ impl<'ip> TypeChecker {
         Ok(this_ty)
     }
 
-    fn check_loop(&mut self, body: &'ip Box<Ast<'_>>) -> Result<Type, CompilerError<'ip>> {
+    fn check_loop(&mut self, body: &'ip AstNode<'_>) -> Result<Type, CompilerError<'ip>> {
         // push a new frame for this loop
         self.loop_stack.push(None);
 
@@ -431,18 +431,13 @@ impl<'ip> TypeChecker {
 
     fn check_if(
         &mut self,
-        condition: &'ip Box<Ast<'_>>,
-        ifbody: &'ip Box<Ast<'_>>,
-        elsebody: &'ip Option<Box<Ast<'_>>>,
+        condition: &'ip AstNode<'_>,
+        ifbody: &'ip AstNode<'_>,
+        elsebody: &'ip Option<Box<AstNode<'_>>>,
     ) -> Result<Type, CompilerError<'ip>> {
         // type-check condition
         let cond_ty = self.infer_type(condition)?;
         if cond_ty != Type::Bool {
-            Self::operand_token(condition).ok_or_else(|| CompilerError::Semantic {
-                err: "if condition has no associated token".to_string(),
-                slice: condition.get_slice(),
-            })?;
-
             return Err(CompilerError::UnexpectedType {
                 got: cond_ty,
                 expected: "bool".into(),
@@ -459,12 +454,6 @@ impl<'ip> TypeChecker {
 
             // both branches must have the same type
             if if_ty != else_ty {
-                let _else_token =
-                    Self::operand_token(else_ast).ok_or_else(|| CompilerError::Semantic {
-                        err: "else branch has no associated token".to_string(),
-                        slice: else_ast.get_slice(),
-                    })?;
-
                 return Err(CompilerError::UnexpectedType {
                     got: else_ty,
                     expected: if_ty.to_string(),
@@ -476,12 +465,6 @@ impl<'ip> TypeChecker {
         } else {
             // no else branch - if body must have Unit type
             if if_ty != Type::Unit {
-                let _if_token =
-                    Self::operand_token(ifbody).ok_or_else(|| CompilerError::Semantic {
-                        err: "if body must return unit type without else".to_string(),
-                        slice: ifbody.get_slice(),
-                    })?;
-
                 return Err(CompilerError::TypeError(format!(
                     "if expression without else branch must have unit type, but if branch has type {}. Add an else branch or change if branch to unit type.",
                     if_ty.to_string()
@@ -494,7 +477,10 @@ impl<'ip> TypeChecker {
         Ok(final_ty)
     }
 
-    fn check_statements(&mut self, stmts: &'ip Vec<Ast<'_>>) -> Result<Type, CompilerError<'ip>> {
+    fn check_statements(
+        &mut self,
+        stmts: &'ip Vec<AstNode<'_>>,
+    ) -> Result<Type, CompilerError<'ip>> {
         let mut last_ty = Type::Unit;
         for stmt in stmts {
             last_ty = self.infer_type(stmt)?;
@@ -504,8 +490,8 @@ impl<'ip> TypeChecker {
 
     fn check_reassign(
         &mut self,
-        lhs: &'ip Box<Ast<'_>>,
-        rhs: &'ip Box<Ast<'_>>,
+        lhs: &'ip AstNode<'_>,
+        rhs: &'ip AstNode<'_>,
     ) -> Result<Type, CompilerError<'ip>> {
         let rhs_ty = self.infer_type(rhs)?;
         let var_ty = self.infer_type(lhs)?;
@@ -524,8 +510,8 @@ impl<'ip> TypeChecker {
     fn check_var_def(
         &mut self,
         name: &Token<'_>,
-        vartype: &'ip Option<Box<Ast<'_>>>,
-        rhs: &'ip Box<Ast<'_>>,
+        vartype: &'ip Option<Box<AstNode<'_>>>,
+        rhs: &'ip AstNode<'_>,
     ) -> Result<Type, CompilerError<'ip>> {
         let rhs_ty = self.infer_type(rhs)?;
 
@@ -548,24 +534,24 @@ impl<'ip> TypeChecker {
         Ok(final_ty)
     }
 
-    fn check_identifier(&mut self, token: &'ip Token<'_>) -> Result<Type, CompilerError<'ip>> {
+    fn check_identifier(&mut self, token: &'ip AstNode<'_>) -> Result<Type, CompilerError<'ip>> {
         if let Some(t) = self.get_local(token.slice.get_str()) {
             Ok(t.clone())
         } else {
-            Err(CompilerError::UndefinedIdentifier(token.clone()))
+            Err(CompilerError::UndefinedIdentifier(token.slice.clone()))
         }
     }
 
     fn check_binary(
         &mut self,
-        left: &'ip Box<Ast<'_>>,
+        left: &'ip AstNode<'_>,
         op: &'ip Token<'_>,
-        right: &'ip Box<Ast<'_>>,
+        right: &'ip AstNode<'_>,
     ) -> Result<Type, CompilerError<'ip>> {
         let lt = self.infer_type(left)?;
         let rt = self.infer_type(right)?;
 
-        match (op.kind.clone(), lt, rt) {
+        match (op.kind.clone(), lt.clone(), rt.clone()) {
             // arithmetic
             (TokenKind::Plus, Type::Int, Type::Int)
             | (TokenKind::Minus, Type::Int, Type::Int)
@@ -598,67 +584,47 @@ impl<'ip> TypeChecker {
                 Ok(Type::Int)
             }
 
-            _ => {
-                let lhs_token = Self::left_token(left).ok_or_else(|| CompilerError::Semantic {
-                    err: "could not find token for left operand".to_string(),
-                    slice: left.get_slice(),
-                })?;
-                let rhs_token =
-                    Self::right_token(right).ok_or_else(|| CompilerError::Semantic {
-                        err: "could not find token for right operand".to_string(),
-                        slice: right.get_slice(),
-                    })?;
-
-                Err(CompilerError::OpTypeError {
-                    op: op.clone(),
-                    lhs: Some(lhs_token),
-                    rhs: rhs_token,
-                })
-            }
+            _ => Err(CompilerError::OpTypeError {
+                op: op.clone(),
+                lhs: Some(lt.clone()),
+                rhs: rt.clone(),
+            }),
         }
     }
 
     fn check_unary(
         &mut self,
         op: &'ip Token<'_>,
-        operand: &'ip Box<Ast<'_>>,
+        operand: &'ip AstNode<'_>,
     ) -> Result<Type, CompilerError<'ip>> {
         let t = self.infer_type(operand)?;
-        match (op.kind.clone(), t) {
+        match (op.kind.clone(), t.clone()) {
             (TokenKind::Minus, Type::Int)
             | (TokenKind::Plus, Type::Int)
             | (TokenKind::Xor, Type::Int) => Ok(Type::Int),
             (TokenKind::Not, Type::Bool) => Ok(Type::Bool),
-            _ => {
-                let operand_token =
-                    Self::operand_token(operand).ok_or_else(|| CompilerError::Semantic {
-                        err: "could not find token for unary operand".to_string(),
-                        slice: operand.get_slice(),
-                    })?;
-
-                Err(CompilerError::OpTypeError {
-                    op: op.clone(),
-                    lhs: None,
-                    rhs: operand_token,
-                })
-            }
+            _ => Err(CompilerError::OpTypeError {
+                op: op.clone(),
+                lhs: None,
+                rhs: t.clone(),
+            }),
         }
     }
 
-    fn ast_to_type(&self, ast: &Ast<'ip>) -> CompilerResult<'ip, Type> {
-        match ast {
-            Ast::Identifier(name) => {
-                if let Some(t) = self.type_env.get(name.slice.get_str()) {
+    fn ast_to_type(&self, ast: &AstNode<'ip>) -> CompilerResult<'ip, Type> {
+        match &ast.kind {
+            AstKind::Identifier(_) => {
+                if let Some(t) = self.type_env.get(ast.slice.get_str()) {
                     Ok(t.clone())
                 } else {
                     Err(CompilerError::TypeError(
-                        format!("'{}' is not a known type", name.slice.get_str()),
-                        name.slice.clone(),
+                        format!("'{}' is not a known type", ast.slice.get_str()),
+                        ast.get_slice(),
                     ))
                 }
             }
-            Ast::Ref(inner) => {
-                let inner_ty = self.ast_to_type(inner)?;
+            AstKind::Ref(inner) => {
+                let inner_ty = self.ast_to_type(&inner)?;
                 Ok(Type::Ref(Box::new(inner_ty)))
             }
             other => Err(CompilerError::Semantic {
@@ -668,34 +634,7 @@ impl<'ip> TypeChecker {
         }
     }
 
-    fn operand_token(ast: &Ast<'ip>) -> Option<Token<'ip>> {
-        match ast {
-            Ast::Identifier(t) | Ast::Int(t) | Ast::Bool(t) => Some(t.clone()),
-            Ast::UnaryOp { op, .. } => Some(op.clone()),
-            Ast::BinaryOp { op, .. } => Some(op.clone()),
-            _ => None,
-        }
-    }
-
-    fn left_token(ast: &Ast<'ip>) -> Option<Token<'ip>> {
-        match ast {
-            Ast::Identifier(t) | Ast::Int(t) | Ast::Bool(t) => Some(t.clone()),
-            Ast::UnaryOp { op, .. } => Some(op.clone()),
-            Ast::BinaryOp { left, .. } => Self::left_token(left),
-            _ => None,
-        }
-    }
-
-    fn right_token(ast: &Ast<'ip>) -> Option<Token<'ip>> {
-        match ast {
-            Ast::Identifier(t) | Ast::Int(t) | Ast::Bool(t) => Some(t.clone()),
-            Ast::UnaryOp { operand, .. } => Self::operand_token(operand),
-            Ast::BinaryOp { right, .. } => Self::right_token(right),
-            _ => None,
-        }
-    }
-
-    fn check_items(&mut self, items: &'ip [Ast<'_>]) -> CompilerResult<'ip, Type> {
+    fn check_items(&mut self, items: &'ip [AstNode<'_>]) -> CompilerResult<'ip, Type> {
         for item in items {
             self.infer_type(item)?;
         }

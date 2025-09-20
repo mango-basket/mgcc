@@ -1,64 +1,76 @@
-use crate::tokenizer::token::{Slice, Token};
+use crate::tokenizer::token::{RawSlice, Token, TokenKind};
 
-#[derive(Debug)]
-pub enum Ast<'ip> {
-    Identifier(Token<'ip>),
-    Int(Token<'ip>),
-    Bool(Token<'ip>),
-    Ref(Box<Ast<'ip>>),
-    Deref(Box<Ast<'ip>>),
+#[derive(Debug, Clone)]
+pub struct AstNode<'ip> {
+    pub kind: AstKind<'ip>,
+    pub slice: RawSlice<'ip>,
+}
+
+impl<'ip> AstNode<'ip> {
+    pub fn new(kind: AstKind<'ip>, slice: RawSlice<'ip>) -> AstNode<'ip> {
+        AstNode { kind, slice }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum AstKind<'ip> {
+    Identifier(TokenKind),
+    Int(TokenKind),
+    Bool(TokenKind),
+    Ref(Box<AstNode<'ip>>),
+    Deref(Box<AstNode<'ip>>),
     UnaryOp {
         op: Token<'ip>,
-        operand: Box<Ast<'ip>>,
+        operand: Box<AstNode<'ip>>,
     },
     BinaryOp {
-        left: Box<Ast<'ip>>,
+        left: Box<AstNode<'ip>>,
         op: Token<'ip>,
-        right: Box<Ast<'ip>>,
+        right: Box<AstNode<'ip>>,
     },
     VarDef {
         name: Token<'ip>,
-        vartype: Option<Box<Ast<'ip>>>,
-        rhs: Box<Ast<'ip>>,
+        vartype: Option<Box<AstNode<'ip>>>,
+        rhs: Box<AstNode<'ip>>,
     },
     Reassign {
-        lhs: Box<Ast<'ip>>,
-        rhs: Box<Ast<'ip>>,
+        lhs: Box<AstNode<'ip>>,
+        rhs: Box<AstNode<'ip>>,
     },
-    Statements(Vec<Ast<'ip>>),
-    Items(Vec<Ast<'ip>>),
+    Statements(Vec<AstNode<'ip>>),
+    Items(Vec<AstNode<'ip>>),
     IfElse {
-        condition: Box<Ast<'ip>>,
-        ifbody: Box<Ast<'ip>>,
-        elsebody: Option<Box<Ast<'ip>>>,
+        condition: Box<AstNode<'ip>>,
+        ifbody: Box<AstNode<'ip>>,
+        elsebody: Option<Box<AstNode<'ip>>>,
     },
     Func {
         name: Token<'ip>,
-        params: Vec<(Token<'ip>, Ast<'ip>)>,
-        body: Box<Ast<'ip>>,
-        ret: Option<Box<Ast<'ip>>>,
+        params: Vec<(Token<'ip>, AstNode<'ip>)>,
+        body: Box<AstNode<'ip>>,
+        ret: Option<Box<AstNode<'ip>>>,
     },
-    Loop(Box<Ast<'ip>>),
-    Break(Option<Box<Ast<'ip>>>),
-    Return(Option<Box<Ast<'ip>>>),
+    Loop(Box<AstNode<'ip>>),
+    Break(Option<Box<AstNode<'ip>>>),
+    Return(Option<Box<AstNode<'ip>>>),
     Continue,
-    Disp(Box<Ast<'ip>>),
+    Disp(Box<AstNode<'ip>>),
     FuncCall {
         name: Token<'ip>,
-        args: Vec<Ast<'ip>>,
+        args: Vec<AstNode<'ip>>,
     },
 }
 
-impl<'ip> Ast<'ip> {
+impl<'ip> AstNode<'ip> {
     pub fn pretty(&self, indent: usize) -> String {
         let pad = "  ".repeat(indent);
-        match self {
-            Ast::Identifier(tok) => format!("{}Ident({})", pad, tok.slice.get_str()),
-            Ast::Int(tok) => format!("{}Int({})", pad, tok.slice.get_str()),
-            Ast::Bool(tok) => format!("{}Bool({})", pad, tok.slice.get_str()),
-            Ast::Ref(inner) => format!("{}Ref({})", pad, inner.pretty(0)),
-            Ast::Deref(inner) => format!("{}Deref({})", pad, inner.pretty(0)),
-            Ast::UnaryOp { op, operand } => {
+        match &self.kind {
+            AstKind::Identifier(_) => format!("{}Ident({})", pad, self.slice.get_str()),
+            AstKind::Int(_) => format!("{}Int({})", pad, self.slice.get_str()),
+            AstKind::Bool(_) => format!("{}Bool({})", pad, self.slice.get_str()),
+            AstKind::Ref(inner) => format!("{}Ref({})", pad, inner.pretty(0)),
+            AstKind::Deref(inner) => format!("{}Deref({})", pad, inner.pretty(0)),
+            AstKind::UnaryOp { op, operand } => {
                 format!(
                     "{}UnaryOp({},{})",
                     pad,
@@ -66,7 +78,7 @@ impl<'ip> Ast<'ip> {
                     operand.pretty(0)
                 )
             }
-            Ast::BinaryOp { left, op, right } => {
+            AstKind::BinaryOp { left, op, right } => {
                 format!(
                     "{}BinaryOp({},{},{})",
                     pad,
@@ -75,7 +87,7 @@ impl<'ip> Ast<'ip> {
                     right.pretty(0)
                 )
             }
-            Ast::VarDef { name, vartype, rhs } => {
+            AstKind::VarDef { name, vartype, rhs } => {
                 if let Some(t) = vartype {
                     format!(
                         "{}VarDef({}:{},{})",
@@ -88,10 +100,10 @@ impl<'ip> Ast<'ip> {
                     format!("{}VarDef({},{})", pad, name.slice.get_str(), rhs.pretty(0))
                 }
             }
-            Ast::Reassign { lhs, rhs } => {
+            AstKind::Reassign { lhs, rhs } => {
                 format!("{}Reassign({}, {})", pad, lhs.pretty(0), rhs.pretty(0))
             }
-            Ast::Statements(stmts) => {
+            AstKind::Statements(stmts) => {
                 let mut s = format!("{}Statements", pad);
                 for stmt in stmts {
                     s.push('\n');
@@ -99,7 +111,7 @@ impl<'ip> Ast<'ip> {
                 }
                 s
             }
-            Ast::IfElse {
+            AstKind::IfElse {
                 condition,
                 ifbody,
                 elsebody,
@@ -117,17 +129,17 @@ impl<'ip> Ast<'ip> {
                     else_str
                 )
             }
-            Ast::Loop(body) => format!("{}Loop({})", pad, body.pretty(0)),
-            Ast::Break(expr_opt) => {
+            AstKind::Loop(body) => format!("{}Loop({})", pad, body.pretty(0)),
+            AstKind::Break(expr_opt) => {
                 if let Some(expr) = expr_opt {
                     format!("{}Break({})", pad, expr.pretty(0))
                 } else {
                     format!("{}Break", pad)
                 }
             }
-            Ast::Continue => format!("{}Continue", pad),
-            Ast::Disp(ast) => format!("{}Disp {}", pad, ast.pretty(0)),
-            Ast::Items(stmts) => {
+            AstKind::Continue => format!("{}Continue", pad),
+            AstKind::Disp(ast) => format!("{}Disp {}", pad, ast.pretty(0)),
+            AstKind::Items(stmts) => {
                 let mut s = format!("{}Items", pad);
                 for stmt in stmts {
                     s.push('\n');
@@ -135,7 +147,7 @@ impl<'ip> Ast<'ip> {
                 }
                 s
             }
-            Ast::Func {
+            AstKind::Func {
                 name,
                 params,
                 body,
@@ -160,14 +172,14 @@ impl<'ip> Ast<'ip> {
                     body.pretty(indent + 1)
                 )
             }
-            Ast::Return(expr_opt) => {
+            AstKind::Return(expr_opt) => {
                 if let Some(expr) = expr_opt {
                     format!("{}Return({})", pad, expr.pretty(0))
                 } else {
                     format!("{}Return", pad)
                 }
             }
-            Ast::FuncCall { name, args: params } => {
+            AstKind::FuncCall { name, args: params } => {
                 let params_str = params
                     .iter()
                     .map(|n| format!("{}", n.pretty(0)))
@@ -178,103 +190,7 @@ impl<'ip> Ast<'ip> {
         }
     }
 
-    pub fn get_slice(&self) -> Slice<'ip> {
-        match self {
-            Ast::Identifier(t) | Ast::Int(t) | Ast::Bool(t) => t.slice.clone(),
-            Ast::Ref(inner) | Ast::Deref(inner) | Ast::Loop(inner) => inner.get_slice(),
-            Ast::UnaryOp { op, operand } => {
-                let start = op.slice.start;
-                let end = operand.get_slice().start + operand.get_slice().len;
-                Slice::new(start, end - start, op.slice.input)
-            }
-            Ast::BinaryOp { left, op, right } => {
-                let start = left.get_slice().start;
-                let end = right.get_slice().start + right.get_slice().len;
-                Slice::new(start, end - start, op.slice.input)
-            }
-            Ast::VarDef {
-                name,
-                vartype: _,
-                rhs,
-            } => {
-                let start = name.slice.start;
-                let end = rhs.get_slice().start + rhs.get_slice().len;
-                Slice::new(start, end - start, name.slice.input)
-            }
-            Ast::Reassign { lhs, rhs } => {
-                let start = lhs.get_slice().start;
-                let end = rhs.get_slice().start + rhs.get_slice().len;
-                Slice::new(start, end - start, lhs.get_slice().input)
-            }
-            Ast::Statements(stmts) => {
-                if stmts.is_empty() {
-                    Slice::new(0, 0, "")
-                } else {
-                    let start = stmts.first().unwrap().get_slice().start;
-                    let last = stmts.last().unwrap().get_slice();
-                    let end = last.start + last.len;
-                    Slice::new(start, end - start, last.input)
-                }
-            }
-            Ast::IfElse {
-                condition,
-                ifbody,
-                elsebody,
-            } => {
-                let start = condition.get_slice().start;
-                let end = if let Some(else_ast) = elsebody {
-                    let s = else_ast.get_slice();
-                    s.start + s.len
-                } else {
-                    ifbody.get_slice().start + ifbody.get_slice().len
-                };
-                Slice::new(start, end - start, condition.get_slice().input)
-            }
-            Ast::Break(expr_opt) => {
-                if let Some(expr) = expr_opt {
-                    expr.get_slice()
-                } else {
-                    Slice::new(0, 0, "")
-                }
-            }
-            Ast::Continue => Slice::new(0, 0, ""),
-            Ast::Disp(ast) => ast.get_slice(),
-            Ast::Items(items) => {
-                if items.is_empty() {
-                    Slice::new(0, 0, "")
-                } else {
-                    let start = items.first().unwrap().get_slice().start;
-                    let last = items.last().unwrap().get_slice();
-                    let end = last.start + last.len;
-                    Slice::new(start, end - start, last.input)
-                }
-            }
-            Ast::Func {
-                name,
-                params: _,
-                body,
-                ret,
-            } => {
-                let start = name.slice.start;
-
-                // compute end position
-                let end = if let Some(ret_tok) = ret {
-                    ret_tok.get_slice().start + ret_tok.get_slice().len
-                } else {
-                    let b = body.get_slice();
-                    b.start + b.len
-                };
-
-                Slice::new(start, end - start, name.slice.input)
-            }
-            Ast::Return(expr_opt) => {
-                if let Some(expr) = expr_opt {
-                    expr.get_slice()
-                } else {
-                    Slice::new(0, 0, "")
-                }
-            }
-            Ast::FuncCall { name, args: _ } => name.clone().slice,
-        }
+    pub fn get_slice(&self) -> RawSlice<'ip> {
+        self.slice.clone()
     }
 }

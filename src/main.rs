@@ -53,7 +53,7 @@ fn compile_source(code: &str, dump_tokens: bool, dump_ast: bool) -> Result<Vec<u
         return Ok(Vec::new());
     }
 
-    let ast = parser::Parser::new(lexer)
+    let ast = parser::Parser::new(lexer, code)
         .parse()
         .map_err(|e| e.to_string())?;
 

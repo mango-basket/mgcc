@@ -122,32 +122,30 @@ impl TokenKind {
 }
 
 #[derive(Clone, Default)]
-pub struct Slice<'ip> {
+pub struct RawSlice<'ip> {
     pub start: usize,
-    pub len: usize,
+    pub end: usize,
     pub input: &'ip str,
 }
 
-impl<'ip> fmt::Debug for Slice<'ip> {
+impl<'ip> fmt::Debug for RawSlice<'ip> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // derive the substring safely
-        let end = self.start + self.len;
-        let snippet = &self.input[self.start..end];
+        let snippet = &self.input[self.start..self.end];
         f.debug_struct("Slice")
             .field("start", &self.start)
-            .field("len", &self.len)
+            .field("len", &(self.end - self.start))
             .field("text", &snippet)
             .finish()
     }
 }
 
-impl<'ip> Slice<'ip> {
-    pub fn new(start: usize, len: usize, input: &'ip str) -> Self {
-        Self { start, len, input }
+impl<'ip> RawSlice<'ip> {
+    pub fn new(start: usize, end: usize, input: &'ip str) -> Self {
+        Self { start, end, input }
     }
 
     pub fn get_str(&self) -> &str {
-        if let Some(str) = self.input.get(self.start..self.start + self.len) {
+        if let Some(str) = self.input.get(self.start..self.end) {
             str
         } else {
             "<unprintable>"
@@ -174,7 +172,7 @@ impl<'ip> Slice<'ip> {
     }
 }
 
-impl<'ip> fmt::Display for Slice<'ip> {
+impl<'ip> fmt::Display for RawSlice<'ip> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "'{}' at {}", self.get_str(), self.get_row_col())
     }
@@ -183,11 +181,11 @@ impl<'ip> fmt::Display for Slice<'ip> {
 #[derive(Debug, Clone)]
 pub struct Token<'ip> {
     pub kind: TokenKind,
-    pub slice: Slice<'ip>,
+    pub slice: RawSlice<'ip>,
 }
 
 impl<'ip> Token<'ip> {
-    pub fn new(kind: TokenKind, slice: Slice<'ip>) -> Self {
+    pub fn new(kind: TokenKind, slice: RawSlice<'ip>) -> Self {
         Self { kind, slice }
     }
 }
