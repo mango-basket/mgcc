@@ -151,14 +151,19 @@ impl<'ip> TypeChecker {
     }
 
     pub fn declare_function(&mut self, name: &str, signature: FnSignature) -> &mut FunctionContext {
+        let has_ret_slot = if signature.ret != Type::Unit { 1 } else { 0 };
+        let param_count = signature.params.len() as i8;
+        let initial_fp_offset = 2      // old fp at fp+2
+                              + 2      // return address
+                              + param_count  // params (1 unit per param)
+                              + has_ret_slot; // optional return slot
+
         let ctx = FunctionContext {
             symbols: HashMap::new(),
-            // Start in the positive offset for params + ret addr + Optional return type + old fp
-            fp_offset: ((3 + (signature.ret != Type::Unit) as i8 * 2)
-                + (signature.params.len() as i8))
-                * 2, // word
+            fp_offset: initial_fp_offset * 2, // word size
             signature,
         };
+
         self.functions.insert(name.to_string(), ctx);
         self.functions.get_mut(name).unwrap()
     }
