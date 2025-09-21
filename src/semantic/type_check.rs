@@ -154,7 +154,8 @@ impl<'ip> TypeChecker {
         let ctx = FunctionContext {
             symbols: HashMap::new(),
             // Start in the positive offset for params + ret addr + Optional return type + old fp
-            fp_offset: ((4 + (signature.ret != Type::Unit) as i8) + (signature.params.len() as i8))
+            fp_offset: ((3 + (signature.ret != Type::Unit) as i8 * 2)
+                + (signature.params.len() as i8))
                 * 2, // word
             signature,
         };

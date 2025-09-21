@@ -241,7 +241,13 @@ impl<'ip> Compiler {
                 let lbl_end = self.next_label();
 
                 // jump to else if condition is false (0)
-                instrs.extend([Instr::Push(0), Instr::Cmp, Instr::JeqLbl(lbl_else.clone())]); // assuming 0 = false, 1 = true
+                instrs.extend([Instr::Push(0), Instr::Cmp]);
+
+                if elsebody.is_some() {
+                    instrs.push(Instr::JeqLbl(lbl_else.clone())); // assuming 0 = false, 1 = true
+                } else {
+                    instrs.push(Instr::JeqLbl(lbl_end.clone()));
+                }
 
                 // generate if-body
                 instrs.extend(self.gen_instrs(&ifbody)?);
@@ -250,8 +256,8 @@ impl<'ip> Compiler {
                 instrs.push(Instr::JmpLbl(lbl_end.clone()));
 
                 // else-body
-                instrs.push(Instr::Lbl(lbl_else));
                 if let Some(else_ast) = elsebody {
+                    instrs.push(Instr::Lbl(lbl_else));
                     instrs.extend(self.gen_instrs(&else_ast)?);
                 }
 
@@ -266,7 +272,8 @@ impl<'ip> Compiler {
 
                 instrs.push(Instr::Lbl(head_lbl.clone()));
                 instrs.extend(self.gen_instrs(&body)?);
-                instrs.extend([Instr::JmpLbl(head_lbl.clone()), Instr::Lbl(end_lbl.clone())]);
+                instrs.push(Instr::JmpLbl(head_lbl.clone()));
+                instrs.push(Instr::Lbl(end_lbl.clone()));
 
                 self.loop_stack.pop();
             }
@@ -409,10 +416,6 @@ impl<'ip> Compiler {
                         Instr::Popr(4),
                     ]);
                 }
-
-                // for _ in args {
-                //     instrs.push(Instr::Popr(0));
-                // }
 
                 // fetch return value (if not unit)
                 if sig.ret != Type::Unit {
