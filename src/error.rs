@@ -2,14 +2,14 @@ use std::{error::Error, fmt::Display};
 
 use crate::{
     semantic::type_check::Type,
-    tokenizer::token::{RawSlice, Token},
+    tokenizer::token::{Span, Token},
 };
 
 #[derive(Debug, Clone)]
 pub enum CompilerError<'ip> {
     UnknownChar {
         ch: char,
-        slice: RawSlice<'ip>,
+        slice: Span<'ip>,
     },
     UnexpectedToken {
         got: Token<'ip>,
@@ -18,7 +18,7 @@ pub enum CompilerError<'ip> {
     UnexpectedType {
         got: Type,
         expected: String,
-        slice: RawSlice<'ip>,
+        slice: Span<'ip>,
     },
     UnexpectedEof,
     OpTypeError {
@@ -26,11 +26,11 @@ pub enum CompilerError<'ip> {
         lhs: Option<Type>,
         rhs: Type,
     },
-    TypeError(String, RawSlice<'ip>),
-    UndefinedIdentifier(RawSlice<'ip>),
+    TypeError(String, Span<'ip>),
+    UndefinedIdentifier(Span<'ip>),
     Semantic {
         err: String,
-        slice: RawSlice<'ip>,
+        slice: Span<'ip>,
     },
 }
 

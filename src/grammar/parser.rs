@@ -3,7 +3,7 @@ use crate::{
     grammar::ast::{AstKind, AstNode},
     tokenizer::{
         lexer::Lexer,
-        token::{Keyword, RawSlice, Token, TokenKind},
+        token::{Keyword, Span, Token, TokenKind},
     },
 };
 use std::{collections::VecDeque, iter::Peekable};
@@ -90,7 +90,7 @@ impl<'ip> Parser<'ip> {
     pub fn gen_node(&mut self, kind: AstKind<'ip>) -> AstNode<'ip> {
         let start = self.slice_stack.pop().expect("slice stack is empty");
         let end = self.pos as usize;
-        AstNode::new(kind, RawSlice::new(start, end, self.input))
+        AstNode::new(kind, Span::new(start, end, self.input))
     }
 
     pub fn next(&mut self) -> Option<CompilerResult<'ip, Token<'ip>>> {

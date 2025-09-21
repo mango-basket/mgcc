@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     error::{CompilerError, CompilerResult},
-    tokenizer::token::{Keyword, RawSlice, Token, TokenKind},
+    tokenizer::token::{Keyword, Span, Token, TokenKind},
 };
 
 pub struct Lexer<'ip> {
@@ -113,7 +113,7 @@ impl<'ip> Iterator for Lexer<'ip> {
             // if not a comment, it's a normal slash token
             return Some(Ok(Token::new(
                 TokenKind::Slash,
-                RawSlice::new(start, 1, self.input),
+                Span::new(start, 1, self.input),
             )));
         }
 
@@ -151,14 +151,14 @@ impl<'ip> Iterator for Lexer<'ip> {
             unknown => {
                 return Some(Err(CompilerError::UnknownChar {
                     ch: unknown,
-                    slice: RawSlice::new(start, start + 1, self.input),
+                    slice: Span::new(start, start + 1, self.input),
                 }))
             }
         };
 
         Some(Ok(Token::new(
             kind,
-            RawSlice::new(start, start + len, self.input),
+            Span::new(start, start + len, self.input),
         )))
     }
 }

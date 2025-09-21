@@ -1,14 +1,43 @@
-use crate::tokenizer::token::{RawSlice, Token, TokenKind};
+use crate::{
+    semantic::type_check::Type,
+    tokenizer::token::{Span, Token, TokenKind},
+};
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RetStatus {
+    Always(Type),
+    Maybe(Type),
+    Never,
+}
+
+#[derive(Debug)]
+pub struct TypedAstNode<'ip> {
+    pub kind: AstKind<'ip>,
+    pub span: Span<'ip>,
+    pub eval_ty: Type,
+    pub ret: RetStatus,
+}
+
+impl<'ip> TypedAstNode<'ip> {
+    pub fn from_ast(ast: &'ip AstNode<'ip>, eval_ty: Type, ret: RetStatus) -> TypedAstNode<'ip> {
+        TypedAstNode {
+            kind: ast.kind.clone(),
+            span: ast.span.clone(),
+            eval_ty,
+            ret,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct AstNode<'ip> {
     pub kind: AstKind<'ip>,
-    pub slice: RawSlice<'ip>,
+    pub span: Span<'ip>,
 }
 
 impl<'ip> AstNode<'ip> {
-    pub fn new(kind: AstKind<'ip>, slice: RawSlice<'ip>) -> AstNode<'ip> {
-        AstNode { kind, slice }
+    pub fn new(kind: AstKind<'ip>, span: Span<'ip>) -> AstNode<'ip> {
+        AstNode { kind, span }
     }
 }
 
@@ -65,9 +94,9 @@ impl<'ip> AstNode<'ip> {
     pub fn pretty(&self, indent: usize) -> String {
         let pad = "  ".repeat(indent);
         match &self.kind {
-            AstKind::Identifier(_) => format!("{}Ident({})", pad, self.slice.get_str()),
-            AstKind::Int(_) => format!("{}Int({})", pad, self.slice.get_str()),
-            AstKind::Bool(_) => format!("{}Bool({})", pad, self.slice.get_str()),
+            AstKind::Identifier(_) => format!("{}Ident({})", pad, self.span.get_str()),
+            AstKind::Int(_) => format!("{}Int({})", pad, self.span.get_str()),
+            AstKind::Bool(_) => format!("{}Bool({})", pad, self.span.get_str()),
             AstKind::Ref(inner) => format!("{}Ref({})", pad, inner.pretty(0)),
             AstKind::Deref(inner) => format!("{}Deref({})", pad, inner.pretty(0)),
             AstKind::UnaryOp { op, operand } => {
@@ -190,7 +219,7 @@ impl<'ip> AstNode<'ip> {
         }
     }
 
-    pub fn get_slice(&self) -> RawSlice<'ip> {
-        self.slice.clone()
+    pub fn get_slice(&self) -> Span<'ip> {
+        self.span.clone()
     }
 }

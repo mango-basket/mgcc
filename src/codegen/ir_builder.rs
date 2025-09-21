@@ -10,7 +10,7 @@ use crate::{
     error::{CompilerError, CompilerResult},
     grammar::ast::{AstKind, AstNode},
     semantic::type_check::{FnSignature, Type},
-    tokenizer::token::{RawSlice, Token, TokenKind},
+    tokenizer::token::{Span, Token, TokenKind},
 };
 
 type SymbolTable = HashMap<String, (Option<i8>, Type)>;
@@ -37,7 +37,7 @@ impl<'ip> Compiler {
         } else {
             Err(CompilerError::Semantic {
                 err: format!("attempted to enter undeclared function `{}`", name),
-                slice: RawSlice::new(0, 0, ""),
+                slice: Span::new(0, 0, ""),
             })
         }
     }

@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::{
     codegen::ir_builder::FunctionContext,
     error::{CompilerError, CompilerResult},
-    grammar::ast::{AstKind, AstNode},
-    tokenizer::token::{Token, TokenKind},
+    grammar::ast::{AstKind, AstNode, RetStatus, TypedAstNode},
+    tokenizer::token::{Span, Token, TokenKind},
 };
 
 #[derive(Clone, Debug)]
@@ -55,7 +55,7 @@ fn default_type_env() -> TypeEnv {
 
 pub fn check_types<'ip>(
     ast: &'ip AstNode<'ip>,
-) -> CompilerResult<'ip, HashMap<String, FunctionContext>> {
+) -> CompilerResult<'ip, (TypedAstNode, HashMap<String, FunctionContext>)> {
     let mut type_checker = TypeChecker {
         functions: HashMap::new(),
         type_env: default_type_env(),
@@ -63,8 +63,8 @@ pub fn check_types<'ip>(
         cur_func: None,
     };
 
-    let _ = type_checker.infer_type(&ast)?;
-    Ok(type_checker.functions)
+    let typed = type_checker.infer_type(&ast)?;
+    Ok((typed, type_checker.functions))
 }
 
 pub struct TypeChecker {
@@ -166,217 +166,245 @@ impl<'ip> TypeChecker {
         self.functions.contains_key(name)
     }
 
-    fn infer_type(&mut self, ast: &'ip AstNode<'ip>) -> CompilerResult<'ip, Type> {
+    fn infer_type(&mut self, ast: &'ip AstNode<'ip>) -> CompilerResult<'ip, TypedAstNode<'ip>> {
         match &ast.kind {
-            AstKind::Int(_) => Ok(Type::Int),
-            AstKind::Bool(_) => Ok(Type::Bool),
-            AstKind::UnaryOp { op, operand } => self.check_unary(&op, &operand),
-            AstKind::BinaryOp { left, op, right } => self.check_binary(&left, &op, &right),
+            AstKind::Int(_) => Ok(TypedAstNode::from_ast(ast, Type::Int, RetStatus::Never)),
+            AstKind::Bool(_) => Ok(TypedAstNode::from_ast(ast, Type::Bool, RetStatus::Never)),
+            AstKind::UnaryOp { op, operand } => self.check_unary(ast, op, operand),
+            AstKind::BinaryOp { left, op, right } => self.check_binary(ast, left, op, right),
             AstKind::Identifier(_) => self.check_identifier(ast),
-            AstKind::VarDef { name, vartype, rhs } => self.check_var_def(&name, &vartype, &rhs),
-            AstKind::Reassign { lhs, rhs } => self.check_reassign(&lhs, &rhs),
-            AstKind::Statements(stmts) => self.check_statements(&stmts),
+            AstKind::VarDef { name, vartype, rhs } => self.check_var_def(ast, name, vartype, rhs),
+            AstKind::Reassign { lhs, rhs } => self.check_reassign(ast, lhs, rhs),
+            AstKind::Statements(stmts) => self.check_statements(ast, stmts),
             AstKind::IfElse {
                 condition,
                 ifbody,
                 elsebody,
-            } => self.check_if(&condition, &ifbody, &elsebody),
-            AstKind::Loop(body) => self.check_loop(&body),
-            AstKind::Continue => Ok(Type::Unit),
-            AstKind::Break(expr_opt) => self.check_break(&expr_opt),
-            AstKind::Ref(inner) => self.check_ref(&inner),
-            AstKind::Deref(inner) => self.check_deref(&inner),
-            AstKind::Disp(inner) => self.check_disp(&inner),
-            AstKind::Items(items) => self.check_items(&items),
+            } => self.check_if(ast, condition, ifbody, elsebody),
+            AstKind::Loop(body) => self.check_loop(ast, body),
+            AstKind::Continue => Ok(TypedAstNode::from_ast(ast, Type::Unit, RetStatus::Never)),
+            AstKind::Break(expr_opt) => self.check_break(ast, expr_opt),
+            AstKind::Ref(inner) => self.check_ref(ast, inner),
+            AstKind::Deref(inner) => self.check_deref(ast, inner),
+            AstKind::Disp(inner) => self.check_disp(ast, inner),
+            AstKind::Items(items) => self.check_items(ast, items),
             AstKind::Func {
                 name,
                 params,
                 body,
                 ret,
-            } => self.check_func(&name, &params, &body, &ret),
-            AstKind::Return(ret_opt) => self.check_return(&ret_opt),
-            AstKind::FuncCall { name, args } => self.check_func_call(&name, &args),
+            } => self.check_func(ast, name, params, body, ret),
+            AstKind::Return(ret_opt) => self.check_return(ast, ret_opt),
+            AstKind::FuncCall { name, args } => self.check_func_call(ast, name, args),
         }
     }
 
     fn check_func_call(
         &mut self,
+        node: &'ip AstNode<'ip>,
         name: &'ip Token<'_>,
-        params: &'ip Vec<AstNode<'_>>,
-    ) -> Result<Type, CompilerError<'ip>> {
-        let params_ty = params
+        args: &'ip Vec<AstNode<'_>>,
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let arg_types: Vec<TypedAstNode> = args
             .iter()
-            .map(|param| self.infer_type(param))
-            .collect::<Vec<_>>();
+            .map(|a| self.infer_type(a))
+            .collect::<Result<_, _>>()?;
 
         let func = self
             .get_function(&name.slice.get_str())
             .ok_or(CompilerError::UndefinedIdentifier(name.slice.clone()))?;
 
-        let expected_len = func.signature.params.len();
-        if params.len() != expected_len {
+        if args.len() != func.signature.params.len() {
             return Err(CompilerError::Semantic {
                 err: format!(
                     "function {} expects {} argument{}, but got {}",
-                    name.slice.to_string(),
-                    expected_len,
-                    if expected_len == 1 { "" } else { "s" },
-                    params.len()
+                    name.slice,
+                    func.signature.params.len(),
+                    if func.signature.params.len() == 1 {
+                        ""
+                    } else {
+                        "s"
+                    },
+                    args.len()
                 ),
                 slice: name.slice.clone(),
             });
         }
 
-        for (expected, got) in func.signature.params.iter().zip(params_ty) {
-            if *expected != got.clone()? {
+        for (expected, got) in func.signature.params.iter().zip(arg_types.iter()) {
+            if *expected != got.eval_ty {
                 return Err(CompilerError::UnexpectedType {
-                    got: got?,
+                    got: got.eval_ty.clone(),
                     expected: expected.to_string(),
-                    slice: name.clone().slice,
+                    slice: name.slice.clone(),
                 });
             }
         }
 
-        Ok(func.signature.ret.clone())
+        Ok(TypedAstNode::from_ast(
+            node,
+            func.signature.ret.clone(),
+            RetStatus::Never,
+        ))
     }
 
     fn check_return(
         &mut self,
+        node: &'ip AstNode<'ip>,
         ret_opt: &'ip Option<Box<AstNode<'_>>>,
-    ) -> Result<Type, CompilerError<'ip>> {
-        if let Some(ret_ast) = ret_opt {
-            Ok(self.infer_type(ret_ast)?)
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let ty = if let Some(ret_ast) = ret_opt {
+            self.infer_type(ret_ast)?.eval_ty
         } else {
-            Ok(Type::Unit)
-        }
+            Type::Unit
+        };
+
+        Ok(TypedAstNode::from_ast(
+            node,
+            ty.clone(),
+            RetStatus::Always(ty),
+        ))
     }
 
     fn check_func(
         &mut self,
+        node: &'ip AstNode<'ip>,
         name: &'ip Token<'_>,
         params: &'ip [(Token<'_>, AstNode<'_>)],
         body: &'ip AstNode<'_>,
         ret: &'ip Option<Box<AstNode<'_>>>,
-    ) -> Result<Type, CompilerError<'ip>> {
-        let name_str = name.slice.get_str();
-
-        // check for redefs
-        if self.has_function(&name_str) {
-            return Err(CompilerError::Semantic {
-                err: format!("function {} already defined once before", name_str),
-                slice: name.slice.clone(),
-            });
-        }
-
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        // determine declared return type
         let ret_ty = if let Some(rettype_ast) = ret {
             self.ast_to_type(rettype_ast)?
         } else {
             Type::Unit
         };
 
+        // declare function in the environment
         self.declare_function(
-            name_str,
+            name.slice.get_str(),
             FnSignature {
                 params: Vec::new(),
                 ret: ret_ty.clone(),
             },
         );
-        self.enter_function(&name_str)?;
-        let mut params_ty = Vec::new();
+        self.enter_function(name.slice.get_str())?;
 
-        if ret_ty != Type::Unit {
-            self.add_local_to_current("__return_addr", Type::Int)?;
-        }
-
+        // add parameters to local environment
         for (pname, ast) in params {
             let param_ty = self.ast_to_type(ast)?;
             self.add_local_to_current(&pname.slice.get_str(), param_ty.clone())?;
-            params_ty.push(param_ty);
         }
 
-        self.add_local_to_current("__return_instr_addr", Type::Int)?;
+        // type-check body
+        let body_typed = self.infer_type(body)?;
 
-        // fp offset should be 0 now
-        let body_ty = self.infer_type(body)?;
-        if body_ty != ret_ty {
+        if body_typed.eval_ty != ret_ty {
             return Err(CompilerError::UnexpectedType {
-                got: body_ty,
+                got: body_typed.eval_ty,
                 expected: ret_ty.to_string(),
                 slice: body.get_slice(),
             });
         }
 
-        let func = self
-            .get_function_mut(
-                self.cur_func
-                    .clone()
-                    .ok_or(CompilerError::UndefinedIdentifier(name.slice.clone()))?
-                    .as_str(),
-            )
-            .ok_or(CompilerError::UndefinedIdentifier(name.slice.clone()))?;
+        // finalize function signature
+        let param_types: Vec<_> = params
+            .iter()
+            .map(|(_, ast)| self.ast_to_type(ast).unwrap())
+            .collect();
 
+        let func = self.get_function_mut(name.slice.get_str()).unwrap();
         func.signature = FnSignature {
-            params: params_ty,
+            params: param_types,
             ret: ret_ty,
         };
 
         self.leave_function();
-        Ok(Type::Unit)
+
+        // function definition itself evaluates to Unit
+        Ok(TypedAstNode::from_ast(node, Type::Unit, RetStatus::Never))
     }
 
-    fn check_disp(&mut self, inner: &'ip Box<AstNode<'ip>>) -> Result<Type, CompilerError<'ip>> {
-        let inner_ty = self.infer_type(inner)?;
-        if inner_ty == Type::Unit {
+    fn check_disp(
+        &mut self,
+        node: &'ip AstNode<'ip>,
+        inner: &'ip Box<AstNode<'ip>>,
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let inner_typed = self.infer_type(inner)?;
+
+        if inner_typed.eval_ty == Type::Unit {
             return Err(CompilerError::TypeError(
                 "cannot display unit type".into(),
                 inner.get_slice(),
             ));
         }
 
-        Ok(Type::Unit)
+        Ok(TypedAstNode::from_ast(
+            node,
+            Type::Unit,      // display itself evaluates to unit
+            inner_typed.ret, // propagate the return status from the inner expression
+        ))
     }
 
-    fn check_deref(&mut self, inner: &'ip Box<AstNode<'ip>>) -> Result<Type, CompilerError<'ip>> {
-        let inner_ty = self.infer_type(inner)?;
-        if let Type::Ref(ty) = inner_ty {
-            Ok(*ty)
+    fn check_deref(
+        &mut self,
+        node: &'ip AstNode<'ip>,
+        inner: &'ip Box<AstNode<'ip>>,
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let inner_typed = self.infer_type(inner)?;
+
+        if let Type::Ref(inner_ty) = inner_typed.eval_ty {
+            Ok(TypedAstNode::from_ast(node, *inner_ty, inner_typed.ret))
         } else {
             Err(CompilerError::TypeError(
-                format!("cannot dereference type {}", inner_ty.to_string()),
+                format!(
+                    "cannot dereference type {}",
+                    inner_typed.eval_ty.to_string()
+                ),
                 inner.get_slice(),
             ))
         }
     }
 
-    fn check_ref(&mut self, inner: &'ip AstNode<'ip>) -> Result<Type, CompilerError<'ip>> {
-        match inner.kind {
-            AstKind::Identifier(_) | AstKind::Deref(_) => {
-                let inner_ty = self.infer_type(inner)?;
-                Ok(Type::Ref(Box::new(inner_ty)))
+    fn check_ref(
+        &mut self,
+        node: &'ip AstNode<'ip>,
+        inner: &'ip AstNode<'ip>,
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let inner_typed = match inner.kind {
+            AstKind::Identifier(_) | AstKind::Deref(_) | AstKind::Ref(_) => {
+                self.infer_type(node)?
             }
-            AstKind::Ref(_) => {
-                let inner_ty = self.infer_type(inner)?;
-                Ok(Type::Ref(Box::new(inner_ty)))
+            _ => {
+                return Err(CompilerError::TypeError(
+                    "cannot take address of this expression".into(),
+                    node.get_slice(),
+                ))
             }
-            _ => Err(CompilerError::TypeError(
-                format!("cannot take address of this expression"),
-                inner.get_slice(),
-            )),
-        }
+        };
+
+        Ok(TypedAstNode::from_ast(
+            node,
+            Type::Ref(Box::new(inner_typed.eval_ty)),
+            inner_typed.ret,
+        ))
     }
 
     fn check_break(
         &mut self,
+        node: &'ip AstNode<'ip>,
         expr_opt: &'ip Option<Box<AstNode<'_>>>,
-    ) -> Result<Type, CompilerError<'ip>> {
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
         // type of this break (unit if no expression)
         let this_ty = if let Some(expr) = expr_opt {
-            self.infer_type(expr)?
+            let typed = self.infer_type(expr)?;
+            typed.eval_ty
         } else {
             Type::Unit
         };
 
-        // update loop frame - we know it exists because we checked above
+        // check if we are inside a loop
         if let Some(top) = self.loop_stack.last_mut() {
             match top {
                 None => *top = Some(this_ty.clone()),
@@ -394,164 +422,189 @@ impl<'ip> TypeChecker {
                 }
             }
         } else {
-            // This should never happen because we checked in semantic_analysis.rs above
+            // break outside loop -> semantic error
             return Err(CompilerError::Semantic {
-                err: "loop stack is empty after non-empty check".to_string(),
-                slice: expr_opt.as_ref().unwrap().get_slice(),
+                err: "break statement used outside of a loop".to_string(),
+                slice: expr_opt.as_ref().map(|b| b.get_slice()).unwrap_or_default(),
             });
         }
 
-        // always return the type of the break expression
-        Ok(this_ty)
+        Ok(TypedAstNode::from_ast(
+            node,
+            this_ty.clone(),
+            RetStatus::Always(this_ty.clone()),
+        ))
     }
 
-    fn check_loop(&mut self, body: &'ip AstNode<'_>) -> Result<Type, CompilerError<'ip>> {
-        // push a new frame for this loop
+    fn check_loop(
+        &mut self,
+        node: &'ip AstNode,
+        body: &'ip AstNode<'_>,
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
         self.loop_stack.push(None);
 
-        // type-check the body
-        let _ = self.infer_type(body)?;
+        let body_typed = self.infer_type(body)?;
 
-        // pop the frame and get the break type
-        let break_ty_opt = self
-            .loop_stack
-            .pop()
-            .ok_or_else(|| CompilerError::Semantic {
-                err: "loop stack underflow - this indicates a compiler bug".to_string(),
-                slice: body.get_slice(),
-            })?;
+        let break_ty_opt = self.loop_stack.pop().unwrap(); // now safe
 
-        // loop type is either the break type or unit if no breaks
-        if let Some(ty) = break_ty_opt {
-            Ok(ty)
-        } else {
-            Ok(Type::Unit)
-        }
+        let ret_status = match break_ty_opt {
+            Some(ty) => RetStatus::Always(ty.clone()),
+            None => RetStatus::Never,
+        };
+
+        Ok(TypedAstNode::from_ast(
+            node,
+            body_typed.eval_ty.clone(),
+            ret_status,
+        ))
     }
 
     fn check_if(
         &mut self,
+        node: &'ip AstNode<'ip>,
         condition: &'ip AstNode<'_>,
         ifbody: &'ip AstNode<'_>,
         elsebody: &'ip Option<Box<AstNode<'_>>>,
-    ) -> Result<Type, CompilerError<'ip>> {
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
         // type-check condition
-        let cond_ty = self.infer_type(condition)?;
-        if cond_ty != Type::Bool {
+        let cond_typed = self.infer_type(condition)?;
+        if cond_typed.eval_ty != Type::Bool {
             return Err(CompilerError::UnexpectedType {
-                got: cond_ty,
+                got: cond_typed.eval_ty,
                 expected: "bool".into(),
                 slice: condition.get_slice(),
             });
         }
 
         // type-check if-body
-        let if_ty = self.infer_type(ifbody)?;
+        let if_typed = self.infer_type(ifbody)?;
 
         // type-check else-body if present
         let final_ty = if let Some(else_ast) = elsebody {
-            let else_ty = self.infer_type(else_ast)?;
+            let else_typed = self.infer_type(else_ast)?;
 
-            // both branches must have the same type
-            if if_ty != else_ty {
+            // both branches must evalutate to the same type
+            if if_typed.eval_ty != else_typed.eval_ty {
                 return Err(CompilerError::UnexpectedType {
-                    got: else_ty,
-                    expected: if_ty.to_string(),
+                    got: else_typed.eval_ty,
+                    expected: if_typed.eval_ty.to_string(),
                     slice: else_ast.get_slice(),
                 });
             }
 
-            if_ty
+            let ret = combine_branches(&if_typed.ret, &else_typed.ret, else_typed.span)?;
+            (if_typed.eval_ty, ret)
         } else {
             // no else branch - if body must have Unit type
-            if if_ty != Type::Unit {
+            if if_typed.eval_ty != Type::Unit {
                 return Err(CompilerError::TypeError(format!(
                     "if expression without else branch must have unit type, but if branch has type {}. Add an else branch or change if branch to unit type.",
-                    if_ty.to_string()
+                    if_typed.eval_ty.to_string()
                 ), ifbody.get_slice()));
             }
 
-            Type::Unit
+            let ret = combine_branches(&if_typed.ret, &RetStatus::Never, ifbody.span.clone())?;
+            (Type::Unit, ret)
         };
 
-        Ok(final_ty)
+        Ok(TypedAstNode::from_ast(node, final_ty.0, final_ty.1))
     }
 
     fn check_statements(
         &mut self,
+        node: &'ip AstNode<'ip>,
         stmts: &'ip Vec<AstNode<'_>>,
-    ) -> Result<Type, CompilerError<'ip>> {
-        let mut last_ty = Type::Unit;
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let mut last_types = (Type::Unit, RetStatus::Never);
+
         for stmt in stmts {
-            last_ty = self.infer_type(stmt)?;
+            let typed = self.infer_type(stmt)?;
+            last_types = (typed.eval_ty, combine_seq(&last_types.1, &typed.ret));
         }
-        Ok(last_ty)
+
+        Ok(TypedAstNode::from_ast(node, last_types.0, last_types.1))
     }
 
     fn check_reassign(
         &mut self,
+        node: &'ip AstNode<'_>,
         lhs: &'ip AstNode<'_>,
         rhs: &'ip AstNode<'_>,
-    ) -> Result<Type, CompilerError<'ip>> {
-        let rhs_ty = self.infer_type(rhs)?;
-        let var_ty = self.infer_type(lhs)?;
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let rhs_typed = self.infer_type(rhs)?;
+        let var_typed = self.infer_type(lhs)?;
 
-        if var_ty != rhs_ty {
+        if var_typed.eval_ty != rhs_typed.eval_ty {
             return Err(CompilerError::UnexpectedType {
-                got: rhs_ty,
-                expected: var_ty.to_string(),
+                got: rhs_typed.eval_ty,
+                expected: var_typed.eval_ty.to_string(),
                 slice: rhs.get_slice(),
             });
         }
 
-        Ok(var_ty)
+        Ok(TypedAstNode::from_ast(
+            node,
+            rhs_typed.eval_ty,
+            rhs_typed.ret,
+        ))
     }
 
     fn check_var_def(
         &mut self,
-        name: &Token<'_>,
+        node: &'ip AstNode<'_>,
+        name: &'ip Token<'_>,
         vartype: &'ip Option<Box<AstNode<'_>>>,
         rhs: &'ip AstNode<'_>,
-    ) -> Result<Type, CompilerError<'ip>> {
-        let rhs_ty = self.infer_type(rhs)?;
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let rhs_typed = self.infer_type(rhs)?;
 
         let final_ty = if let Some(vartype_ast) = vartype {
             let annotated_ty = self.ast_to_type(vartype_ast)?;
-            if annotated_ty == rhs_ty {
+            if annotated_ty == rhs_typed.eval_ty {
                 annotated_ty
             } else {
                 return Err(CompilerError::UnexpectedType {
-                    got: rhs_ty,
+                    got: rhs_typed.eval_ty,
                     expected: annotated_ty.to_string(),
                     slice: rhs.get_slice(),
                 });
             }
         } else {
-            rhs_ty
+            rhs_typed.eval_ty
         };
 
         self.add_local_to_current(name.slice.get_str(), final_ty.clone())?;
-        Ok(final_ty)
+        Ok(TypedAstNode::from_ast(node, Type::Unit, rhs_typed.ret))
     }
 
-    fn check_identifier(&mut self, token: &'ip AstNode<'_>) -> Result<Type, CompilerError<'ip>> {
-        if let Some(t) = self.get_local(token.slice.get_str()) {
-            Ok(t.clone())
+    fn check_identifier(
+        &mut self,
+        ident: &'ip AstNode<'_>,
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        if let Some(t) = self.get_local(ident.span.get_str()) {
+            Ok(TypedAstNode::from_ast(ident, t.clone(), RetStatus::Never))
         } else {
-            Err(CompilerError::UndefinedIdentifier(token.slice.clone()))
+            Err(CompilerError::UndefinedIdentifier(ident.span.clone()))
         }
     }
 
     fn check_binary(
         &mut self,
-        left: &'ip AstNode<'_>,
-        op: &'ip Token<'_>,
-        right: &'ip AstNode<'_>,
-    ) -> Result<Type, CompilerError<'ip>> {
-        let lt = self.infer_type(left)?;
-        let rt = self.infer_type(right)?;
+        node: &'ip AstNode<'ip>,
+        left: &'ip AstNode<'ip>,
+        op: &'ip Token<'ip>,
+        right: &'ip AstNode<'ip>,
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let ltyped = self.infer_type(left)?;
+        let rtyped = self.infer_type(right)?;
 
-        match (op.kind.clone(), lt.clone(), rt.clone()) {
+        let ret = combine_seq(&ltyped.ret, &rtyped.ret);
+
+        let eval_ty = match (
+            op.kind.clone(),
+            ltyped.eval_ty.clone(),
+            rtyped.eval_ty.clone(),
+        ) {
             // arithmetic
             (TokenKind::Plus, Type::Int, Type::Int)
             | (TokenKind::Minus, Type::Int, Type::Int)
@@ -586,27 +639,30 @@ impl<'ip> TypeChecker {
 
             _ => Err(CompilerError::OpTypeError {
                 op: op.clone(),
-                lhs: Some(lt.clone()),
-                rhs: rt.clone(),
+                lhs: Some(ltyped.eval_ty.clone()),
+                rhs: rtyped.eval_ty.clone(),
             }),
-        }
+        }?;
+
+        Ok(TypedAstNode::from_ast(node, eval_ty, ret))
     }
 
     fn check_unary(
         &mut self,
+        node: &'ip AstNode,
         op: &'ip Token<'_>,
         operand: &'ip AstNode<'_>,
-    ) -> Result<Type, CompilerError<'ip>> {
-        let t = self.infer_type(operand)?;
-        match (op.kind.clone(), t.clone()) {
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let typed = self.infer_type(operand)?;
+        match (op.kind.clone(), typed.eval_ty.clone()) {
             (TokenKind::Minus, Type::Int)
             | (TokenKind::Plus, Type::Int)
-            | (TokenKind::Xor, Type::Int) => Ok(Type::Int),
-            (TokenKind::Not, Type::Bool) => Ok(Type::Bool),
+            | (TokenKind::Xor, Type::Int) => Ok(TypedAstNode::from_ast(node, Type::Int, typed.ret)),
+            (TokenKind::Not, Type::Bool) => Ok(TypedAstNode::from_ast(node, Type::Bool, typed.ret)),
             _ => Err(CompilerError::OpTypeError {
                 op: op.clone(),
                 lhs: None,
-                rhs: t.clone(),
+                rhs: typed.eval_ty.clone(),
             }),
         }
     }
@@ -614,11 +670,11 @@ impl<'ip> TypeChecker {
     fn ast_to_type(&self, ast: &AstNode<'ip>) -> CompilerResult<'ip, Type> {
         match &ast.kind {
             AstKind::Identifier(_) => {
-                if let Some(t) = self.type_env.get(ast.slice.get_str()) {
+                if let Some(t) = self.type_env.get(ast.get_slice().get_str()) {
                     Ok(t.clone())
                 } else {
                     Err(CompilerError::TypeError(
-                        format!("'{}' is not a known type", ast.slice.get_str()),
+                        format!("'{}' is not a known type", ast.get_slice().get_str()),
                         ast.get_slice(),
                     ))
                 }
@@ -634,11 +690,82 @@ impl<'ip> TypeChecker {
         }
     }
 
-    fn check_items(&mut self, items: &'ip [AstNode<'_>]) -> CompilerResult<'ip, Type> {
+    fn check_items(
+        &mut self,
+        node: &'ip AstNode<'ip>,
+        items: &'ip [AstNode<'_>],
+    ) -> CompilerResult<'ip, TypedAstNode<'ip>> {
+        let mut last_ret = RetStatus::Never;
+
         for item in items {
-            self.infer_type(item)?;
+            let typed_item = self.infer_type(item)?;
+            last_ret = combine_seq(&last_ret, &typed_item.ret);
         }
 
-        Ok(Type::Unit)
+        Ok(TypedAstNode::from_ast(
+            node,
+            Type::Unit, // a block of items evaluates to unit
+            last_ret,   // return status propagated from last item
+        ))
+    }
+}
+
+fn combine_branches<'ip>(
+    left: &RetStatus,
+    right: &RetStatus,
+    span: Span<'ip>,
+) -> Result<RetStatus, CompilerError<'ip>> {
+    use RetStatus::*;
+    match (left, right) {
+        // both never return
+        (Never, Never) => Ok(Never),
+
+        // both always return, must match types
+        (Always(lt), Always(rt)) if lt == rt => Ok(Always(lt.clone())),
+        (Always(lt), Always(rt)) => Err(CompilerError::UnexpectedType {
+            got: rt.clone(),
+            expected: lt.to_string(),
+            slice: span,
+        }),
+
+        // both maybe return, unify types if they match
+        (Maybe(lt), Maybe(rt)) if lt == rt => Ok(Maybe(lt.clone())),
+        (Maybe(lt), Maybe(rt)) => Err(CompilerError::UnexpectedType {
+            got: rt.clone(),
+            expected: lt.to_string(),
+            slice: span,
+        }),
+
+        // mix of always + never -> only some paths return
+        (Always(t), Never) | (Never, Always(t)) => Ok(Maybe(t.clone())),
+
+        // mix of always + maybe → still only maybe
+        (Always(t), Maybe(u)) | (Maybe(u), Always(t)) if t == u => Ok(Maybe(t.clone())),
+        (Always(t), Maybe(u)) | (Maybe(u), Always(t)) => Err(CompilerError::UnexpectedType {
+            got: u.clone(),
+            expected: t.to_string(),
+            slice: span,
+        }),
+
+        // mix of maybe + never -> stays maybe
+        (Maybe(t), Never) | (Never, Maybe(t)) => Ok(Maybe(t.clone())),
+    }
+}
+
+fn combine_seq(left: &RetStatus, right: &RetStatus) -> RetStatus {
+    use RetStatus::*;
+    match (left, right) {
+        // once you have an always-return, the rest is unreachable
+        (Always(t), _) => Always(t.clone()),
+
+        // left never returns, so outcome = right
+        (Never, r) => r.clone(),
+
+        // left maybe returns, so the overall is maybe unless right is always
+        (Maybe(t), Always(u)) if t == u => Always(u.clone()),
+        (Maybe(_), Always(u)) => Maybe(u.clone()), // type mismatch handled earlier
+        (Maybe(t), Never) => Maybe(t.clone()),
+        (Maybe(t), Maybe(u)) if t == u => Maybe(t.clone()),
+        (Maybe(_), Maybe(u)) => Maybe(u.clone()), // mismatch handled earlier
     }
 }

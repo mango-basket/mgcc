@@ -122,13 +122,13 @@ impl TokenKind {
 }
 
 #[derive(Clone, Default)]
-pub struct RawSlice<'ip> {
+pub struct Span<'ip> {
     pub start: usize,
     pub end: usize,
     pub input: &'ip str,
 }
 
-impl<'ip> fmt::Debug for RawSlice<'ip> {
+impl<'ip> fmt::Debug for Span<'ip> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let snippet = &self.input[self.start..self.end];
         f.debug_struct("Slice")
@@ -139,7 +139,7 @@ impl<'ip> fmt::Debug for RawSlice<'ip> {
     }
 }
 
-impl<'ip> RawSlice<'ip> {
+impl<'ip> Span<'ip> {
     pub fn new(start: usize, end: usize, input: &'ip str) -> Self {
         Self { start, end, input }
     }
@@ -172,7 +172,7 @@ impl<'ip> RawSlice<'ip> {
     }
 }
 
-impl<'ip> fmt::Display for RawSlice<'ip> {
+impl<'ip> fmt::Display for Span<'ip> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "'{}' at {}", self.get_str(), self.get_row_col())
     }
@@ -181,11 +181,11 @@ impl<'ip> fmt::Display for RawSlice<'ip> {
 #[derive(Debug, Clone)]
 pub struct Token<'ip> {
     pub kind: TokenKind,
-    pub slice: RawSlice<'ip>,
+    pub slice: Span<'ip>,
 }
 
 impl<'ip> Token<'ip> {
-    pub fn new(kind: TokenKind, slice: RawSlice<'ip>) -> Self {
+    pub fn new(kind: TokenKind, slice: Span<'ip>) -> Self {
         Self { kind, slice }
     }
 }

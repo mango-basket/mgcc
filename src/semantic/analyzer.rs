@@ -5,7 +5,7 @@ use crate::{
     error::{CompilerError, CompilerResult},
     grammar::ast::{AstKind, AstNode},
     semantic::type_check::Type,
-    tokenizer::token::RawSlice,
+    tokenizer::token::Span,
 };
 
 pub struct SemanticChecker<'a> {
@@ -34,7 +34,7 @@ impl<'a> SemanticChecker<'a> {
         if !self.funcs.contains_key("main") {
             return Err(CompilerError::Semantic {
                 err: "main function not found".to_string(),
-                slice: RawSlice::new(0, 0, ""),
+                slice: Span::new(0, 0, ""),
             });
         }
 
@@ -42,14 +42,14 @@ impl<'a> SemanticChecker<'a> {
         if func_sig.params.len() != 0 {
             return Err(CompilerError::Semantic {
                 err: format!("main expects 0 parameters, found {}", func_sig.params.len()),
-                slice: RawSlice::new(0, 0, ""),
+                slice: Span::new(0, 0, ""),
             });
         }
 
         if func_sig.ret != Type::Unit {
             return Err(CompilerError::Semantic {
                 err: "main function must return unit type".to_string(),
-                slice: RawSlice::new(0, 0, ""),
+                slice: Span::new(0, 0, ""),
             });
         }
 
