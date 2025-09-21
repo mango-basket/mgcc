@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     codegen::ir_builder::FunctionContext,
     error::{CompilerError, CompilerResult},
-    grammar::ast::{AstKind, AstNode},
+    grammar::ast::{TypedAstKind, TypedAstNode},
     semantic::type_check::Type,
     tokenizer::token::Span,
 };
@@ -14,7 +14,7 @@ pub struct SemanticChecker<'a> {
 }
 
 pub fn check_semantics<'ip>(
-    ast: &AstNode<'ip>,
+    ast: &'ip TypedAstNode<'ip>,
     funcs: &HashMap<String, FunctionContext>,
 ) -> CompilerResult<'ip, ()> {
     let mut checker = SemanticChecker::new(funcs);
@@ -34,7 +34,7 @@ impl<'a> SemanticChecker<'a> {
         if !self.funcs.contains_key("main") {
             return Err(CompilerError::Semantic {
                 err: "main function not found".to_string(),
-                slice: Span::new(0, 0, ""),
+                span: Span::new(0, 0, ""),
             });
         }
 
@@ -42,93 +42,94 @@ impl<'a> SemanticChecker<'a> {
         if func_sig.params.len() != 0 {
             return Err(CompilerError::Semantic {
                 err: format!("main expects 0 parameters, found {}", func_sig.params.len()),
-                slice: Span::new(0, 0, ""),
+                span: Span::new(0, 0, ""),
             });
         }
 
         if func_sig.ret != Type::Unit {
             return Err(CompilerError::Semantic {
                 err: "main function must return unit type".to_string(),
-                slice: Span::new(0, 0, ""),
+                span: Span::new(0, 0, ""),
             });
         }
 
         Ok(())
     }
 
-    pub fn check<'ip>(&mut self, ast: &AstNode<'ip>) -> CompilerResult<'ip, ()> {
+    pub fn check<'ip>(&mut self, ast: &'ip TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
         match &ast.kind {
-            AstKind::Break(_) | AstKind::Continue => {
+            TypedAstKind::Break(_) | TypedAstKind::Continue => {
                 if self.loop_depth == 0 {
                     return Err(CompilerError::Semantic {
                         err: "break/continue outside of loop".to_string(),
-                        slice: ast.get_slice(),
+                        span: ast.get_span(),
                     });
                 }
                 Ok(())
             }
-            AstKind::Loop(body) => {
+            TypedAstKind::Loop(body) => {
                 self.loop_depth += 1;
-                self.check(body)?;
+                self.check(&*body)?;
                 self.loop_depth -= 1;
                 Ok(())
             }
-            AstKind::Statements(stmts) => {
+            TypedAstKind::Statements(stmts) | TypedAstKind::Items(stmts) => {
                 for stmt in stmts {
-                    self.check(stmt)?;
+                    self.check(&stmt)?;
                 }
                 Ok(())
             }
-            AstKind::IfElse {
+            TypedAstKind::IfElse {
                 condition: _,
                 ifbody,
                 elsebody,
             } => {
-                self.check(ifbody)?;
+                self.check(&ifbody)?;
                 if let Some(else_ast) = elsebody {
-                    self.check(else_ast)?;
+                    self.check(&else_ast)?;
                 }
                 Ok(())
             }
-            AstKind::UnaryOp { operand, .. } => self.check(operand),
-            AstKind::BinaryOp { left, right, .. } => {
-                self.check(left)?;
-                self.check(right)
+            TypedAstKind::UnaryOp { operand, .. } => self.check(&operand),
+            TypedAstKind::BinaryOp { left, right, .. } => {
+                self.check(&left)?;
+                self.check(&right)
             }
-            AstKind::VarDef { rhs, .. } => self.check(rhs),
-            AstKind::Reassign { lhs, rhs } => {
-                self.check(lhs)?;
-                self.check(rhs)?;
+            TypedAstKind::VarDef { rhs, .. } => self.check(&rhs),
+            TypedAstKind::Reassign { lhs, rhs } => {
+                self.check(&lhs)?;
+                self.check(&rhs)?;
 
-                // If we have a deref we can be guaranteed that its a valid deref
                 match lhs.kind {
-                    AstKind::Identifier(_) | AstKind::Deref(_) => Ok(()),
+                    TypedAstKind::Identifier(_) | TypedAstKind::Deref(_) => Ok(()),
                     _ => Err(CompilerError::Semantic {
                         err: "invalid left-hand side in assignment".to_string(),
-                        slice: lhs.get_slice(),
+                        span: lhs.get_span(),
                     }),
                 }
             }
-            AstKind::Ref(inner) => match &inner.kind {
-                AstKind::Identifier(_) | AstKind::Deref(_) => Ok(()),
-                AstKind::Ref(inner2) => Ok(self.check(&inner2)?),
+            TypedAstKind::Ref(inner) => match &inner.kind {
+                TypedAstKind::Identifier(_) | TypedAstKind::Deref(_) => Ok(()),
+                TypedAstKind::Ref(inner2) => self.check(&inner2),
                 _ => Err(CompilerError::Semantic {
                     err: "cannot take reference of a temporary expression".to_string(),
-                    slice: inner.get_slice(),
+                    span: inner.get_span(),
                 }),
             },
-            AstKind::Deref(_) => Ok(()),
-            AstKind::Disp(_) => Ok(()),
-            AstKind::Int(_) | AstKind::Bool(_) | AstKind::Identifier(_) => Ok(()),
-            AstKind::Items(_asts) => Ok(()),
-            AstKind::Func {
+            TypedAstKind::Deref(_) => Ok(()),
+            TypedAstKind::Disp(_) => Ok(()),
+            TypedAstKind::Int(_) | TypedAstKind::Bool(_) | TypedAstKind::Identifier(_) => Ok(()),
+            TypedAstKind::Func {
                 name: _,
                 params: _,
-                body: _,
+                body,
                 ret: _,
-            } => Ok(()),
-            AstKind::Return(_ast) => Ok(()),
-            AstKind::FuncCall { .. } => Ok(()),
+            } => {
+                // check function body recursively
+                self.check(&body)
+            }
+            TypedAstKind::Return(_ast) => Ok(()),
+            TypedAstKind::FuncCall { .. } => Ok(()),
         }
     }
 }

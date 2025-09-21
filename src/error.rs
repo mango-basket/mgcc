@@ -30,7 +30,7 @@ pub enum CompilerError<'ip> {
     UndefinedIdentifier(Span<'ip>),
     Semantic {
         err: String,
-        slice: Span<'ip>,
+        span: Span<'ip>,
     },
 }
 
@@ -101,7 +101,7 @@ impl<'ip> Display for CompilerError<'ip> {
                     slice.get_str()
                 )
             }
-            Self::Semantic { err, slice } => {
+            Self::Semantic { err, span: slice } => {
                 write!(f, "Semantic Error at {}: {}", slice.get_row_col(), err)
             }
         }

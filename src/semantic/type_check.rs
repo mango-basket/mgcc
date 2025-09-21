@@ -55,7 +55,7 @@ fn default_type_env() -> TypeEnv {
 
 pub fn check_types<'ip>(
     ast: &'ip AstNode<'ip>,
-) -> CompilerResult<'ip, (TypedAstNode, HashMap<String, FunctionContext>)> {
+) -> CompilerResult<'ip, (TypedAstNode<'ip>, HashMap<String, FunctionContext>)> {
     let mut type_checker = TypeChecker {
         functions: HashMap::new(),
         type_env: default_type_env(),
@@ -81,7 +81,7 @@ impl<'ip> TypeChecker {
             .clone()
             .ok_or_else(|| CompilerError::Semantic {
                 err: "no current function selected".to_string(),
-                slice: Default::default(),
+                span: Default::default(),
             })?;
         self.add_local(&func_name, name, ty)
     }
@@ -97,7 +97,7 @@ impl<'ip> TypeChecker {
             .get_mut(func_name)
             .ok_or_else(|| CompilerError::Semantic {
                 err: format!("function '{}' not found", func_name),
-                slice: Default::default(),
+                span: Default::default(),
             })?;
 
         if ctx.symbols.contains_key(name) {
@@ -106,7 +106,7 @@ impl<'ip> TypeChecker {
                     "local variable '{}' already exists in function '{}'",
                     name, func_name
                 ),
-                slice: Default::default(),
+                span: Default::default(),
             });
         }
 
@@ -133,7 +133,7 @@ impl<'ip> TypeChecker {
         } else {
             Err(CompilerError::Semantic {
                 err: format!("function '{}' does not exist", name),
-                slice: Default::default(),
+                span: Default::default(),
             })
         }
     }
@@ -160,10 +160,6 @@ impl<'ip> TypeChecker {
 
     pub fn get_function_mut(&mut self, name: &str) -> Option<&mut FunctionContext> {
         self.functions.get_mut(name)
-    }
-
-    pub fn has_function(&self, name: &str) -> bool {
-        self.functions.contains_key(name)
     }
 
     fn infer_type(&mut self, ast: &'ip AstNode<'ip>) -> CompilerResult<'ip, TypedAstNode<'ip>> {
@@ -227,7 +223,7 @@ impl<'ip> TypeChecker {
                     },
                     args.len()
                 ),
-                slice: name.slice.clone(),
+                span: name.slice.clone(),
             });
         }
 
@@ -300,12 +296,32 @@ impl<'ip> TypeChecker {
         // type-check body
         let body_typed = self.infer_type(body)?;
 
-        if body_typed.eval_ty != ret_ty {
-            return Err(CompilerError::UnexpectedType {
-                got: body_typed.eval_ty,
-                expected: ret_ty.to_string(),
-                slice: body.get_slice(),
-            });
+        // enforce that function body cannot be Maybe
+        match &body_typed.ret {
+            RetStatus::Maybe(_) => {
+                return Err(CompilerError::TypeError(
+                    "function body cannot have paths that may or may not return".into(),
+                    body.get_slice(),
+                ));
+            }
+            RetStatus::Always(ref ty) => {
+                if *ty != ret_ty {
+                    return Err(CompilerError::UnexpectedType {
+                        got: ty.clone(),
+                        expected: ret_ty.to_string(),
+                        slice: body.get_slice(),
+                    });
+                }
+            }
+            RetStatus::Never => {
+                if ret_ty != Type::Unit {
+                    return Err(CompilerError::UnexpectedType {
+                        got: Type::Unit,
+                        expected: ret_ty.to_string(),
+                        slice: body.get_slice(),
+                    });
+                }
+            }
         }
 
         // finalize function signature
@@ -425,7 +441,7 @@ impl<'ip> TypeChecker {
             // break outside loop -> semantic error
             return Err(CompilerError::Semantic {
                 err: "break statement used outside of a loop".to_string(),
-                slice: expr_opt.as_ref().map(|b| b.get_slice()).unwrap_or_default(),
+                span: expr_opt.as_ref().map(|b| b.get_slice()).unwrap_or_default(),
             });
         }
 
@@ -685,7 +701,7 @@ impl<'ip> TypeChecker {
             }
             other => Err(CompilerError::Semantic {
                 err: format!("invalid AST {:#?} in type annotation", other),
-                slice: ast.get_slice(),
+                span: ast.get_slice(),
             }),
         }
     }

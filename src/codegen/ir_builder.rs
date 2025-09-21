@@ -37,7 +37,7 @@ impl<'ip> Compiler {
         } else {
             Err(CompilerError::Semantic {
                 err: format!("attempted to enter undeclared function `{}`", name),
-                slice: Span::new(0, 0, ""),
+                span: Span::new(0, 0, ""),
             })
         }
     }
@@ -276,7 +276,7 @@ impl<'ip> Compiler {
                     .ok_or(
                         CompilerError::Semantic {
                             err: "continue found outside loop (unreachable)".into(),
-                            slice: ast.get_slice(),
+                            span: ast.get_slice(),
                         }, // Shouldnt ever happen because of the semantic analyzer
                     )?
                     .0
@@ -293,7 +293,7 @@ impl<'ip> Compiler {
                         .ok_or(
                             CompilerError::Semantic {
                                 err: "break found outside loop (unreachable)".into(),
-                                slice: ast.get_slice(),
+                                span: ast.get_slice(),
                             }, // Shouldnt ever happen because of the semantic analyzer
                         )?
                         .1

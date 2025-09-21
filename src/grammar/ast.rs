@@ -10,24 +10,152 @@ pub enum RetStatus {
     Never,
 }
 
+pub type TypedAstKind<'ip> = GenericAstKind<'ip, TypedAstNode<'ip>>;
+
 #[derive(Debug)]
 pub struct TypedAstNode<'ip> {
-    pub kind: AstKind<'ip>,
+    pub kind: TypedAstKind<'ip>,
     pub span: Span<'ip>,
     pub eval_ty: Type,
     pub ret: RetStatus,
 }
 
 impl<'ip> TypedAstNode<'ip> {
-    pub fn from_ast(ast: &'ip AstNode<'ip>, eval_ty: Type, ret: RetStatus) -> TypedAstNode<'ip> {
+    pub fn get_span(&self) -> Span<'ip> {
+        self.span.clone()
+    }
+
+    pub fn from_ast(ast: &AstNode<'ip>, eval_ty: Type, ret: RetStatus) -> Self {
+        fn map_children<'ip>(
+            ast_kind: &AstKind<'ip>,
+            eval_ty: Type,
+            ret: RetStatus,
+        ) -> TypedAstKind<'ip> {
+            match ast_kind {
+                AstKind::Identifier(t) => TypedAstKind::Identifier(t.clone()),
+                AstKind::Int(t) => TypedAstKind::Int(t.clone()),
+                AstKind::Bool(t) => TypedAstKind::Bool(t.clone()),
+                AstKind::Ref(inner) => TypedAstKind::Ref(Box::new(TypedAstNode::from_ast(
+                    inner,
+                    eval_ty.clone(),
+                    ret.clone(),
+                ))),
+                AstKind::Deref(inner) => TypedAstKind::Deref(Box::new(TypedAstNode::from_ast(
+                    inner,
+                    eval_ty.clone(),
+                    ret.clone(),
+                ))),
+                AstKind::UnaryOp { op, operand } => TypedAstKind::UnaryOp {
+                    op: op.clone(),
+                    operand: Box::new(TypedAstNode::from_ast(
+                        operand,
+                        eval_ty.clone(),
+                        ret.clone(),
+                    )),
+                },
+                AstKind::BinaryOp { left, op, right } => TypedAstKind::BinaryOp {
+                    left: Box::new(TypedAstNode::from_ast(left, eval_ty.clone(), ret.clone())),
+                    op: op.clone(),
+                    right: Box::new(TypedAstNode::from_ast(right, eval_ty.clone(), ret.clone())),
+                },
+                AstKind::VarDef { name, vartype, rhs } => TypedAstKind::VarDef {
+                    name: name.clone(),
+                    vartype: vartype
+                        .as_ref()
+                        .map(|v| Box::new(TypedAstNode::from_ast(v, eval_ty.clone(), ret.clone()))),
+                    rhs: Box::new(TypedAstNode::from_ast(rhs, eval_ty.clone(), ret.clone())),
+                },
+                AstKind::Reassign { lhs, rhs } => TypedAstKind::Reassign {
+                    lhs: Box::new(TypedAstNode::from_ast(lhs, eval_ty.clone(), ret.clone())),
+                    rhs: Box::new(TypedAstNode::from_ast(rhs, eval_ty.clone(), ret.clone())),
+                },
+                AstKind::Statements(stmts) => TypedAstKind::Statements(
+                    stmts
+                        .iter()
+                        .map(|c| TypedAstNode::from_ast(c, eval_ty.clone(), ret.clone()))
+                        .collect(),
+                ),
+                AstKind::Items(items) => TypedAstKind::Items(
+                    items
+                        .iter()
+                        .map(|c| TypedAstNode::from_ast(c, eval_ty.clone(), ret.clone()))
+                        .collect(),
+                ),
+                AstKind::IfElse {
+                    condition,
+                    ifbody,
+                    elsebody,
+                } => TypedAstKind::IfElse {
+                    condition: Box::new(TypedAstNode::from_ast(
+                        condition,
+                        eval_ty.clone(),
+                        ret.clone(),
+                    )),
+                    ifbody: Box::new(TypedAstNode::from_ast(ifbody, eval_ty.clone(), ret.clone())),
+                    elsebody: elsebody
+                        .as_ref()
+                        .map(|c| Box::new(TypedAstNode::from_ast(c, eval_ty.clone(), ret.clone()))),
+                },
+                AstKind::Func {
+                    name,
+                    params,
+                    body,
+                    ret: ret_node,
+                } => TypedAstKind::Func {
+                    name: name.clone(),
+                    params: params
+                        .iter()
+                        .map(|(t, n)| {
+                            (
+                                t.clone(),
+                                TypedAstNode::from_ast(n, eval_ty.clone(), ret.clone()),
+                            )
+                        })
+                        .collect(),
+                    body: Box::new(TypedAstNode::from_ast(body, eval_ty.clone(), ret.clone())),
+                    ret: ret_node
+                        .as_ref()
+                        .map(|r| Box::new(TypedAstNode::from_ast(r, eval_ty.clone(), ret.clone()))),
+                },
+                AstKind::Loop(inner) => TypedAstKind::Loop(Box::new(TypedAstNode::from_ast(
+                    inner,
+                    eval_ty.clone(),
+                    ret.clone(),
+                ))),
+                AstKind::Break(expr) => TypedAstKind::Break(
+                    expr.as_ref()
+                        .map(|e| Box::new(TypedAstNode::from_ast(e, eval_ty.clone(), ret.clone()))),
+                ),
+                AstKind::Return(expr) => TypedAstKind::Return(
+                    expr.as_ref()
+                        .map(|e| Box::new(TypedAstNode::from_ast(e, eval_ty.clone(), ret.clone()))),
+                ),
+                AstKind::Continue => TypedAstKind::Continue,
+                AstKind::Disp(inner) => TypedAstKind::Disp(Box::new(TypedAstNode::from_ast(
+                    inner,
+                    eval_ty.clone(),
+                    ret.clone(),
+                ))),
+                AstKind::FuncCall { name, args } => TypedAstKind::FuncCall {
+                    name: name.clone(),
+                    args: args
+                        .iter()
+                        .map(|c| TypedAstNode::from_ast(c, eval_ty.clone(), ret.clone()))
+                        .collect(),
+                },
+            }
+        }
+
         TypedAstNode {
-            kind: ast.kind.clone(),
+            kind: map_children(&ast.kind, eval_ty.clone(), ret.clone()),
             span: ast.span.clone(),
             eval_ty,
             ret,
         }
     }
 }
+
+pub type AstKind<'ip> = GenericAstKind<'ip, AstNode<'ip>>;
 
 #[derive(Debug, Clone)]
 pub struct AstNode<'ip> {
@@ -42,51 +170,51 @@ impl<'ip> AstNode<'ip> {
 }
 
 #[derive(Debug, Clone)]
-pub enum AstKind<'ip> {
+pub enum GenericAstKind<'ip, Child> {
     Identifier(TokenKind),
     Int(TokenKind),
     Bool(TokenKind),
-    Ref(Box<AstNode<'ip>>),
-    Deref(Box<AstNode<'ip>>),
+    Ref(Box<Child>),
+    Deref(Box<Child>),
     UnaryOp {
         op: Token<'ip>,
-        operand: Box<AstNode<'ip>>,
+        operand: Box<Child>,
     },
     BinaryOp {
-        left: Box<AstNode<'ip>>,
+        left: Box<Child>,
         op: Token<'ip>,
-        right: Box<AstNode<'ip>>,
+        right: Box<Child>,
     },
     VarDef {
         name: Token<'ip>,
-        vartype: Option<Box<AstNode<'ip>>>,
-        rhs: Box<AstNode<'ip>>,
+        vartype: Option<Box<Child>>,
+        rhs: Box<Child>,
     },
     Reassign {
-        lhs: Box<AstNode<'ip>>,
-        rhs: Box<AstNode<'ip>>,
+        lhs: Box<Child>,
+        rhs: Box<Child>,
     },
-    Statements(Vec<AstNode<'ip>>),
-    Items(Vec<AstNode<'ip>>),
+    Statements(Vec<Child>),
+    Items(Vec<Child>),
     IfElse {
-        condition: Box<AstNode<'ip>>,
-        ifbody: Box<AstNode<'ip>>,
-        elsebody: Option<Box<AstNode<'ip>>>,
+        condition: Box<Child>,
+        ifbody: Box<Child>,
+        elsebody: Option<Box<Child>>,
     },
     Func {
         name: Token<'ip>,
-        params: Vec<(Token<'ip>, AstNode<'ip>)>,
-        body: Box<AstNode<'ip>>,
-        ret: Option<Box<AstNode<'ip>>>,
+        params: Vec<(Token<'ip>, Child)>,
+        body: Box<Child>,
+        ret: Option<Box<Child>>,
     },
-    Loop(Box<AstNode<'ip>>),
-    Break(Option<Box<AstNode<'ip>>>),
-    Return(Option<Box<AstNode<'ip>>>),
+    Loop(Box<Child>),
+    Break(Option<Box<Child>>),
+    Return(Option<Box<Child>>),
     Continue,
-    Disp(Box<AstNode<'ip>>),
+    Disp(Box<Child>),
     FuncCall {
         name: Token<'ip>,
-        args: Vec<AstNode<'ip>>,
+        args: Vec<Child>,
     },
 }
 
