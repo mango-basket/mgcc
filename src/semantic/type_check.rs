@@ -7,6 +7,12 @@ use crate::{
     tokenizer::token::{Span, Token, TokenKind},
 };
 
+#[derive(Copy, Clone)]
+pub enum ExprContext {
+    Expr,
+    Stmt,
+}
+
 #[derive(Clone, Debug)]
 pub struct FnSignature {
     pub params: Vec<Type>,
@@ -61,6 +67,7 @@ pub fn check_types<'ip>(
         type_env: default_type_env(),
         loop_stack: Vec::new(),
         cur_func: None,
+        expr_ctx: ExprContext::Expr,
     };
 
     let typed = type_checker.infer_type(&ast)?;
@@ -72,6 +79,7 @@ pub struct TypeChecker {
     cur_func: Option<String>,
     type_env: TypeEnv,
     loop_stack: Vec<Option<Type>>,
+    expr_ctx: ExprContext,
 }
 
 impl<'ip> TypeChecker {
@@ -287,11 +295,17 @@ impl<'ip> TypeChecker {
         );
         self.enter_function(name.slice.get_str())?;
 
+        if ret_ty != Type::Unit {
+            self.add_local_to_current("__return_addr", Type::Int)?;
+        }
+
         // add parameters to local environment
         for (pname, ast) in params {
             let param_ty = self.ast_to_type(ast)?;
             self.add_local_to_current(&pname.slice.get_str(), param_ty.clone())?;
         }
+
+        self.add_local_to_current("__return_instr_addr", Type::Int)?;
 
         // type-check body
         let body_typed = self.infer_type(body)?;
@@ -492,35 +506,42 @@ impl<'ip> TypeChecker {
             });
         }
 
-        // type-check if-body
+        // save current context and force statement context for body type-check
+        let old_ctx = self.expr_ctx;
+        self.expr_ctx = ExprContext::Stmt;
         let if_typed = self.infer_type(ifbody)?;
+        self.expr_ctx = old_ctx;
 
-        // type-check else-body if present
-        let final_ty = if let Some(else_ast) = elsebody {
-            let else_typed = self.infer_type(else_ast)?;
+        let final_ty = match (&elsebody, self.expr_ctx) {
+            (Some(else_ast), _) => {
+                // check else-body
+                let else_typed = self.infer_type(else_ast)?;
 
-            // both branches must evalutate to the same type
-            if if_typed.eval_ty != else_typed.eval_ty {
-                return Err(CompilerError::UnexpectedType {
-                    got: else_typed.eval_ty,
-                    expected: if_typed.eval_ty.to_string(),
-                    slice: else_ast.get_slice(),
-                });
+                // both branches must evaluate to the same type
+                if if_typed.eval_ty != else_typed.eval_ty {
+                    return Err(CompilerError::UnexpectedType {
+                        got: else_typed.eval_ty,
+                        expected: if_typed.eval_ty.to_string(),
+                        slice: else_ast.get_slice(),
+                    });
+                }
+
+                let ret =
+                    combine_branches(&if_typed.ret, &else_typed.ret, else_typed.span.clone())?;
+                (if_typed.eval_ty, ret)
             }
-
-            let ret = combine_branches(&if_typed.ret, &else_typed.ret, else_typed.span)?;
-            (if_typed.eval_ty, ret)
-        } else {
-            // no else branch - if body must have Unit type
-            if if_typed.eval_ty != Type::Unit {
-                return Err(CompilerError::TypeError(format!(
-                    "if expression without else branch must have unit type, but if branch has type {}. Add an else branch or change if branch to unit type.",
-                    if_typed.eval_ty.to_string()
-                ), ifbody.get_slice()));
+            (None, ExprContext::Stmt) => {
+                // no else branch, in statement context → type is unit
+                let ret = combine_branches(&if_typed.ret, &RetStatus::Never, ifbody.span.clone())?;
+                (Type::Unit, ret)
             }
-
-            let ret = combine_branches(&if_typed.ret, &RetStatus::Never, ifbody.span.clone())?;
-            (Type::Unit, ret)
+            (None, ExprContext::Expr) => {
+                // no else branch in expression context → error
+                return Err(CompilerError::TypeError(
+                    "if expression without else branch cannot be used in expression context".into(),
+                    ifbody.get_slice(),
+                ));
+            }
         };
 
         Ok(TypedAstNode::from_ast(node, final_ty.0, final_ty.1))
@@ -531,14 +552,18 @@ impl<'ip> TypeChecker {
         node: &'ip AstNode<'ip>,
         stmts: &'ip Vec<AstNode<'_>>,
     ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
-        let mut last_types = (Type::Unit, RetStatus::Never);
+        let old_ctx = self.expr_ctx;
+        self.expr_ctx = ExprContext::Stmt;
 
+        let mut block_ret = RetStatus::Never;
         for stmt in stmts {
             let typed = self.infer_type(stmt)?;
-            last_types = (typed.eval_ty, combine_seq(&last_types.1, &typed.ret));
+            block_ret = combine_seq(&block_ret, &typed.ret);
         }
 
-        Ok(TypedAstNode::from_ast(node, last_types.0, last_types.1))
+        self.expr_ctx = old_ctx;
+
+        Ok(TypedAstNode::from_ast(node, Type::Unit, block_ret))
     }
 
     fn check_reassign(
