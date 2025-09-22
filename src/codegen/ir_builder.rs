@@ -60,26 +60,11 @@ impl<'ip> Compiler {
             .expect("current function missing from map")
     }
 
-    fn alloc_local(&mut self, name: &str, ty: Type) -> i8 {
-        let func = self.cur_func_ctx();
-        let fp_offset = func.fp_offset;
-        func.symbols.insert(name.to_string(), (Some(fp_offset), ty));
-        func.fp_offset -= 2;
-        fp_offset
-    }
-
     fn lookup_local_slot(&self, name: &str) -> Option<i8> {
         self.cur_func_ctx_ref()
             .symbols
             .get(name)
             .and_then(|(slot, _ty)| *slot)
-    }
-
-    fn lookup_local_type(&self, name: &str) -> Option<Type> {
-        self.cur_func_ctx_ref()
-            .symbols
-            .get(name)
-            .map(|(_slot, ty)| ty.clone())
     }
 
     fn next_label(&mut self) -> String {
@@ -139,6 +124,115 @@ impl<'ip> Compiler {
         instrs
     }
 
+    fn gen_branching(
+        &mut self,
+        cond: &'ip AstNode<'ip>,
+        lbl_true: String,
+        lbl_false: String,
+    ) -> CompilerResult<'ip, Vec<Instr>> {
+        let mut instrs = Vec::new();
+
+        match &cond.kind {
+            AstKind::BinaryOp { left, op, right } => {
+                match op.kind {
+                    TokenKind::And => {
+                        // if its false jump straight to false
+                        if left.kind.is_leaf() {
+                            instrs.extend(self.gen_branching(
+                                &left,
+                                lbl_true.clone(),
+                                lbl_false.clone(),
+                            )?);
+                        } else {
+                            let mid = self.next_label();
+                            instrs.extend(self.gen_branching(
+                                &left,
+                                mid.clone(),
+                                lbl_false.clone(),
+                            )?);
+                            instrs.push(Instr::Lbl(mid));
+                        }
+
+                        instrs.extend(self.gen_branching(&right, lbl_true, lbl_false)?);
+                    }
+
+                    // if the first one is true jump striaght to true
+                    TokenKind::Or => {
+                        if left.kind.is_leaf() {
+                            // if left is true, jump straight to true
+                            instrs.extend(self.gen_branching(
+                                &left,
+                                lbl_true.clone(),
+                                lbl_false.clone(),
+                            )?);
+                        } else {
+                            let mid = self.next_label();
+                            instrs.extend(self.gen_branching(
+                                &left,
+                                lbl_true.clone(),
+                                mid.clone(),
+                            )?);
+                            instrs.push(Instr::Lbl(mid));
+                        }
+
+                        instrs.extend(self.gen_branching(&right, lbl_true, lbl_false)?);
+                    }
+
+                    // comparisons
+                    TokenKind::Eq
+                    | TokenKind::Neq
+                    | TokenKind::Lt
+                    | TokenKind::Gt
+                    | TokenKind::Lte
+                    | TokenKind::Gte => {
+                        instrs.extend(self.gen_instrs(&left)?);
+                        instrs.extend(self.gen_instrs(&right)?);
+                        instrs.push(Instr::Cmp);
+
+                        match op.kind {
+                            TokenKind::Eq => instrs.push(Instr::JeqLbl(lbl_true)),
+                            TokenKind::Neq => {
+                                instrs.push(Instr::JeqLbl(lbl_false.clone()));
+                                instrs.push(Instr::JmpLbl(lbl_true));
+                            }
+                            TokenKind::Lt => instrs.push(Instr::JltLbl(lbl_true)),
+                            TokenKind::Gt => instrs.push(Instr::JgtLbl(lbl_true)),
+                            TokenKind::Lte => {
+                                instrs.push(Instr::JgtLbl(lbl_false.clone()));
+                                instrs.push(Instr::JmpLbl(lbl_true));
+                            }
+                            TokenKind::Gte => {
+                                instrs.push(Instr::JltLbl(lbl_false.clone()));
+                                instrs.push(Instr::JmpLbl(lbl_true));
+                            }
+                            _ => unreachable!(),
+                        }
+
+                        instrs.push(Instr::JmpLbl(lbl_false));
+                    }
+
+                    _ => {
+                        return Err(CompilerError::UnexpectedToken {
+                            got: op.clone(),
+                            expected: "logical or comparison operator",
+                        });
+                    }
+                }
+            }
+
+            _ => {
+                // fallback
+                instrs.extend(self.gen_instrs(cond)?);
+                instrs.push(Instr::Push(0));
+                instrs.push(Instr::Cmp);
+                instrs.push(Instr::JeqLbl(lbl_false.clone()));
+                instrs.push(Instr::JmpLbl(lbl_true));
+            }
+        }
+
+        Ok(instrs)
+    }
+
     pub fn gen_instrs(&mut self, ast: &'ip AstNode<'ip>) -> CompilerResult<'ip, Vec<Instr>> {
         let mut instrs = Vec::new();
 
@@ -192,12 +286,10 @@ impl<'ip> Compiler {
                 vartype: _,
                 rhs,
             } => {
-                // look up type from var_env (guaranteed by typechecker)
-                let ty = self
-                    .lookup_local_type(name.slice.get_str())
-                    .expect("typechecker ensures variables exist");
-
-                let slot = self.alloc_local(name.slice.get_str(), ty);
+                // locals are already allocated
+                let slot = self
+                    .lookup_local_slot(name.slice.get_str())
+                    .expect("unallocated local detected in codegen");
 
                 instrs.extend(self.gen_instrs(&rhs)?);
                 instrs.push(Instr::Storer(FP, slot));
@@ -234,22 +326,26 @@ impl<'ip> Compiler {
                 ifbody,
                 elsebody,
             } => {
-                // generate code for condition
-                instrs.extend(self.gen_instrs(&condition)?);
-
+                let lbl_if = self.next_label();
                 let lbl_else = self.next_label();
                 let lbl_end = self.next_label();
 
-                // jump to else if condition is false (0)
-                instrs.extend([Instr::Push(0), Instr::Cmp]);
-
                 if elsebody.is_some() {
-                    instrs.push(Instr::JeqLbl(lbl_else.clone())); // assuming 0 = false, 1 = true
+                    instrs.extend(self.gen_branching(
+                        &condition,
+                        lbl_if.clone(),
+                        lbl_else.clone(),
+                    )?);
                 } else {
-                    instrs.push(Instr::JeqLbl(lbl_end.clone()));
+                    instrs.extend(self.gen_branching(
+                        &condition,
+                        lbl_if.clone(),
+                        lbl_end.clone(),
+                    )?);
                 }
 
                 // generate if-body
+                instrs.push(Instr::Lbl(lbl_if));
                 instrs.extend(self.gen_instrs(&ifbody)?);
 
                 // after if-body, jump to end
@@ -360,6 +456,16 @@ impl<'ip> Compiler {
                     Instr::Mov(FP, SP), // set new FP = SP
                 ]);
 
+                // allocate locals
+                // find biggest local offset
+                let ofst = self.cur_func_ctx().fp_offset;
+                instrs.extend([
+                    Instr::Push((ofst as i16) as u16),
+                    Instr::Pushr(SP),
+                    Instr::Add,
+                    Instr::Popr(SP),
+                ]);
+
                 // body
                 instrs.extend(self.gen_instrs(&body)?);
 
@@ -397,8 +503,8 @@ impl<'ip> Compiler {
                     instrs.push(Instr::Push(0));
                 }
 
-                // push args right-to-left
-                for arg in args.iter().rev() {
+                // push args left to right
+                for arg in args.iter() {
                     instrs.extend(self.gen_instrs(arg)?);
                 }
 
@@ -415,12 +521,6 @@ impl<'ip> Compiler {
                         Instr::Add,
                         Instr::Popr(4),
                     ]);
-                }
-
-                // fetch return value (if not unit)
-                if sig.ret != Type::Unit {
-                    instrs.push(Instr::Popr(0)); // move return into r0
-                    instrs.push(Instr::Pushr(0));
                 }
             }
         }

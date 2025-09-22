@@ -153,8 +153,8 @@ impl<'ip> TypeChecker {
     pub fn declare_function(&mut self, name: &str, signature: FnSignature) -> &mut FunctionContext {
         let has_ret_slot = if signature.ret != Type::Unit { 1 } else { 0 };
         let param_count = signature.params.len() as i8;
-        let initial_fp_offset = 2      // old fp at fp+2
-                              + 2      // return address
+        let initial_fp_offset = 1      // old fp at fp+2
+                              + 1      // return address
                               + param_count  // params (1 unit per param)
                               + has_ret_slot; // optional return slot
 
@@ -170,10 +170,6 @@ impl<'ip> TypeChecker {
 
     pub fn get_function(&self, name: &str) -> Option<&FunctionContext> {
         self.functions.get(name)
-    }
-
-    pub fn get_function_mut(&mut self, name: &str) -> Option<&mut FunctionContext> {
-        self.functions.get_mut(name)
     }
 
     fn infer_type(&mut self, ast: &'ip AstNode<'ip>) -> CompilerResult<'ip, TypedAstNode<'ip>> {
@@ -291,11 +287,17 @@ impl<'ip> TypeChecker {
             Type::Unit
         };
 
+        // finalize function signature
+        let param_types: Vec<Type> = params
+            .iter()
+            .map(|(_, ast)| self.ast_to_type(ast))
+            .collect::<CompilerResult<Vec<Type>>>()?;
+
         // declare function in the environment
         self.declare_function(
             name.slice.get_str(),
             FnSignature {
-                params: Vec::new(),
+                params: param_types.clone(),
                 ret: ret_ty.clone(),
             },
         );
@@ -306,12 +308,12 @@ impl<'ip> TypeChecker {
         }
 
         // add parameters to local environment
-        for (pname, ast) in params {
-            let param_ty = self.ast_to_type(ast)?;
-            self.add_local_to_current(&pname.slice.get_str(), param_ty.clone())?;
+        for ((pname, _), ty) in params.iter().zip(param_types) {
+            self.add_local_to_current(&pname.slice.get_str(), ty.clone())?;
         }
 
         self.add_local_to_current("__return_instr_addr", Type::Int)?;
+        self.add_local_to_current("__old_fp", Type::Int)?;
 
         // type-check body
         let body_typed = self.infer_type(body)?;
@@ -343,19 +345,6 @@ impl<'ip> TypeChecker {
                 }
             }
         }
-
-        // finalize function signature
-        let param_types: Vec<_> = params
-            .iter()
-            .map(|(_, ast)| self.ast_to_type(ast).unwrap())
-            .collect();
-
-        let func = self.get_function_mut(name.slice.get_str()).unwrap();
-        func.signature = FnSignature {
-            params: param_types,
-            ret: ret_ty,
-        };
-
         self.leave_function();
 
         // function definition itself evaluates to Unit

@@ -218,6 +218,32 @@ pub enum GenericAstKind<'ip, Child> {
     },
 }
 
+impl<'ip, Child> GenericAstKind<'ip, Child> {
+    pub fn is_leaf(&self) -> bool {
+        use GenericAstKind::*;
+
+        match self {
+            Identifier(_) | Int(_) | Bool(_) => true,
+            Ref(_) => false,
+            Deref(_) => false,
+            UnaryOp { .. } => false,
+            BinaryOp { .. } => false,
+            VarDef { .. } => false,
+            Reassign { .. } => false,
+            Statements(_) => false,
+            Items(_) => false,
+            IfElse { .. } => false,
+            Func { .. } => false,
+            Loop(_) => false,
+            Break(_) => false,
+            Return(_) => false,
+            Continue => false,
+            Disp(_) => false,
+            FuncCall { .. } => false,
+        }
+    }
+}
+
 impl<'ip> AstNode<'ip> {
     pub fn pretty(&self, indent: usize) -> String {
         let pad = "  ".repeat(indent);
