@@ -101,7 +101,9 @@ impl<'a> SemanticChecker<'a> {
                 self.check(&rhs)?;
 
                 match lhs.kind {
-                    TypedAstKind::Identifier(_) | TypedAstKind::Deref(_) => Ok(()),
+                    TypedAstKind::Identifier(_)
+                    | TypedAstKind::Deref(_)
+                    | TypedAstKind::Index { .. } => Ok(()),
                     _ => Err(CompilerError::Semantic {
                         err: "invalid left-hand side in assignment".to_string(),
                         span: lhs.get_span(),
@@ -122,18 +124,16 @@ impl<'a> SemanticChecker<'a> {
             | TypedAstKind::Bool(_)
             | TypedAstKind::Char(_)
             | TypedAstKind::Identifier(_) => Ok(()),
-            TypedAstKind::Func {
-                name: _,
-                params: _,
-                body,
-                ret: _,
-            } => {
+            TypedAstKind::Func { body, .. } => {
                 // check function body recursively
                 self.check(&body)
             }
             TypedAstKind::Return(_ast) => Ok(()),
             TypedAstKind::FuncCall { .. } => Ok(()),
             TypedAstKind::As { .. } => Ok(()),
+            TypedAstKind::Index { .. } => Ok(()),
+            TypedAstKind::Array(_) => Ok(()),
+            TypedAstKind::ArrayDef { .. } => Ok(()),
         }
     }
 }

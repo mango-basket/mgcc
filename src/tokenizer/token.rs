@@ -85,7 +85,7 @@ impl<'ip> fmt::Debug for Span<'ip> {
         let snippet = &self.input[self.start..self.end];
         f.debug_struct("Slice")
             .field("start", &self.start)
-            .field("len", &(self.end - self.start))
+            .field("end", &self.end)
             .field("text", &snippet)
             .finish()
     }

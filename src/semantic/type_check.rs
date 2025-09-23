@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     codegen::ir_builder::FunctionContext,
     error::{CompilerError, CompilerResult},
-    grammar::ast::{AstKind, AstNode, RetStatus, TypedAstNode},
+    grammar::ast::{AstKind, AstNode, RetStatus, TypedAstKind, TypedAstNode},
     tokenizer::token::{Span, Token, TokenKind},
 };
 
@@ -144,7 +144,8 @@ impl<'ip> TypeChecker {
         let slot = ctx.fp_offset;
         ctx.symbols
             .insert(name.to_string(), (Some(slot), ty.clone()));
-        ctx.fp_offset -= ty.get_padded_size() as i8;
+        // ctx.fp_offset -= ty.get_padded_size() as i8;
+        ctx.fp_offset -= 2;
 
         Ok(())
     }
@@ -176,10 +177,11 @@ impl<'ip> TypeChecker {
 
     pub fn declare_function(&mut self, name: &str, signature: FnSignature) -> &mut FunctionContext {
         let has_ret_slot = if signature.ret != Type::Unit { 1 } else { 0 };
-        let param_size: usize = signature.params.iter().map(|ty| ty.get_padded_size()).sum();
-        let initial_fp_offset = 1      // old fp at fp+2
-                              + 1      // return address
-                              + param_size  // params (1 unit per param)
+        let param_size: usize = signature.params.len();
+
+        let initial_fp_offset = 1             // old fp at fp+2
+                              + 1             // return address
+                              + param_size    // params (1 unit per param)
                               + has_ret_slot; // optional return slot
 
         let ctx = FunctionContext {
@@ -198,9 +200,24 @@ impl<'ip> TypeChecker {
 
     fn infer_type(&mut self, ast: &'ip AstNode<'ip>) -> CompilerResult<'ip, TypedAstNode<'ip>> {
         match &ast.kind {
-            AstKind::Int(_) => Ok(TypedAstNode::from_ast(ast, Type::Int, RetStatus::Never)),
-            AstKind::Bool(_) => Ok(TypedAstNode::from_ast(ast, Type::Bool, RetStatus::Never)),
-            AstKind::Char(_) => Ok(TypedAstNode::from_ast(ast, Type::Char, RetStatus::Never)),
+            AstKind::Int(tok) => Ok(TypedAstNode::new(
+                TypedAstKind::Int(tok.clone()),
+                ast.get_span(),
+                Type::Int,
+                RetStatus::Never,
+            )),
+            AstKind::Bool(tok) => Ok(TypedAstNode::new(
+                TypedAstKind::Bool(tok.clone()),
+                ast.get_span(),
+                Type::Bool,
+                RetStatus::Never,
+            )),
+            AstKind::Char(tok) => Ok(TypedAstNode::new(
+                TypedAstKind::Char(tok.clone()),
+                ast.get_span(),
+                Type::Char,
+                RetStatus::Never,
+            )),
             AstKind::UnaryOp { op, operand } => self.check_unary(ast, op, operand),
             AstKind::BinaryOp { left, op, right } => self.check_binary(ast, left, op, right),
             AstKind::Identifier(_) => self.check_identifier(ast),
@@ -213,7 +230,12 @@ impl<'ip> TypeChecker {
                 elsebody,
             } => self.check_if(ast, condition, ifbody, elsebody),
             AstKind::Loop(body) => self.check_loop(ast, body),
-            AstKind::Continue => Ok(TypedAstNode::from_ast(ast, Type::Unit, RetStatus::Never)),
+            AstKind::Continue => Ok(TypedAstNode::new(
+                TypedAstKind::Continue,
+                ast.get_span(),
+                Type::Unit,
+                RetStatus::Never,
+            )),
             AstKind::Break(expr_opt) => self.check_break(ast, expr_opt),
             AstKind::Ref(inner) => self.check_ref(ast, inner),
             AstKind::Deref(inner) => self.check_deref(ast, inner),
@@ -276,8 +298,12 @@ impl<'ip> TypeChecker {
             }
         }
 
-        Ok(TypedAstNode::from_ast(
-            node,
+        Ok(TypedAstNode::new(
+            TypedAstKind::FuncCall {
+                name: name.clone(),
+                args: arg_types,
+            },
+            node.get_span(),
             func.signature.ret.clone(),
             RetStatus::Never,
         ))
@@ -288,17 +314,23 @@ impl<'ip> TypeChecker {
         node: &'ip AstNode<'ip>,
         ret_opt: &'ip Option<Box<AstNode<'_>>>,
     ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
-        let ty = if let Some(ret_ast) = ret_opt {
-            self.infer_type(ret_ast)?.eval_ty
+        if let Some(ret_ast) = ret_opt {
+            let typed = self.infer_type(ret_ast)?;
+            let eval = typed.eval_ty.clone();
+            Ok(TypedAstNode::new(
+                TypedAstKind::Return(Some(Box::new(typed))),
+                node.get_span(),
+                eval.clone(),
+                RetStatus::Always(eval),
+            ))
         } else {
-            Type::Unit
-        };
-
-        Ok(TypedAstNode::from_ast(
-            node,
-            ty.clone(),
-            RetStatus::Always(ty),
-        ))
+            Ok(TypedAstNode::new(
+                TypedAstKind::Return(None),
+                node.get_span(),
+                Type::Unit,
+                RetStatus::Always(Type::Unit),
+            ))
+        }
     }
 
     fn check_func(
@@ -321,6 +353,11 @@ impl<'ip> TypeChecker {
             .iter()
             .map(|(_, ast)| self.ast_to_type(ast))
             .collect::<CompilerResult<Vec<Type>>>()?;
+        let params_typed: Vec<(Token<'_>, Type)> = params
+            .iter()
+            .zip(param_types.clone())
+            .map(|((pname, _), ty)| (pname.clone(), ty))
+            .collect();
 
         // declare function in the environment
         self.declare_function(
@@ -337,7 +374,7 @@ impl<'ip> TypeChecker {
         }
 
         // add parameters to local environment
-        for ((pname, _), ty) in params.iter().zip(param_types) {
+        for (pname, ty) in params_typed.iter() {
             self.add_local_to_current(&pname.span.get_str(), ty.clone())?;
         }
 
@@ -346,8 +383,8 @@ impl<'ip> TypeChecker {
 
         // type-check body
         let body_typed = self.infer_type(body)?;
-
         // enforce that function body cannot be Maybe
+
         match &body_typed.ret {
             RetStatus::Maybe(_) => {
                 return Err(CompilerError::TypeError(
@@ -374,10 +411,20 @@ impl<'ip> TypeChecker {
                 }
             }
         }
+
         self.leave_function();
 
         // function definition itself evaluates to Unit
-        Ok(TypedAstNode::from_ast(node, Type::Unit, RetStatus::Never))
+        Ok(TypedAstNode::new(
+            TypedAstKind::Func {
+                name: name.clone(),
+                params: params_typed,
+                body: Box::new(body_typed),
+            },
+            node.get_span(),
+            Type::Unit,
+            RetStatus::Never,
+        ))
     }
 
     fn check_disp(
@@ -394,8 +441,9 @@ impl<'ip> TypeChecker {
             ));
         }
 
-        Ok(TypedAstNode::from_ast(
-            node,
+        Ok(TypedAstNode::new(
+            TypedAstKind::Disp(Box::new(inner_typed.clone())),
+            node.get_span(),
             Type::Unit,      // display itself evaluates to unit
             inner_typed.ret, // propagate the return status from the inner expression
         ))
@@ -408,8 +456,13 @@ impl<'ip> TypeChecker {
     ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
         let inner_typed = self.infer_type(inner)?;
 
-        if let Type::Ref(inner_ty) = inner_typed.eval_ty {
-            Ok(TypedAstNode::from_ast(node, *inner_ty, inner_typed.ret))
+        if let Type::Ref(ref inner_ty) = inner_typed.eval_ty {
+            Ok(TypedAstNode::new(
+                TypedAstKind::Deref(Box::new(inner_typed.clone())),
+                node.get_span(),
+                *inner_ty.clone(),
+                inner_typed.ret,
+            ))
         } else {
             Err(CompilerError::TypeError(
                 format!(
@@ -438,8 +491,9 @@ impl<'ip> TypeChecker {
             }
         };
 
-        Ok(TypedAstNode::from_ast(
-            node,
+        Ok(TypedAstNode::new(
+            TypedAstKind::Ref(Box::new(inner_typed.clone())),
+            node.get_span(),
             Type::Ref(Box::new(inner_typed.eval_ty)),
             inner_typed.ret,
         ))
@@ -451,12 +505,17 @@ impl<'ip> TypeChecker {
         expr_opt: &'ip Option<Box<AstNode<'_>>>,
     ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
         // type of this break (unit if no expression)
-        let this_ty = if let Some(expr) = expr_opt {
+        let expr_typed = if let Some(expr) = expr_opt {
             let typed = self.infer_type(expr)?;
-            typed.eval_ty
+            Some(Box::new(typed))
         } else {
-            Type::Unit
+            None
         };
+
+        let this_ty = expr_typed
+            .clone()
+            .map(|typed| typed.clone().eval_ty)
+            .unwrap_or(Type::Unit);
 
         // check if we are inside a loop
         if let Some(top) = self.loop_stack.last_mut() {
@@ -483,10 +542,11 @@ impl<'ip> TypeChecker {
             });
         }
 
-        Ok(TypedAstNode::from_ast(
-            node,
+        Ok(TypedAstNode::new(
+            TypedAstKind::Break(expr_typed),
+            node.get_span(),
             this_ty.clone(),
-            RetStatus::Always(this_ty.clone()),
+            RetStatus::Never,
         ))
     }
 
@@ -499,17 +559,18 @@ impl<'ip> TypeChecker {
 
         let body_typed = self.infer_type(body)?;
 
-        let break_ty_opt = self.loop_stack.pop().unwrap(); // now safe
+        // let break_ty_opt = self.loop_stack.pop().unwrap(); // now safe
 
-        let ret_status = match break_ty_opt {
-            Some(ty) => RetStatus::Always(ty.clone()),
-            None => RetStatus::Never,
-        };
+        // let ret_status = match break_ty_opt {
+        //     Some(ty) => RetStatus::Always(ty.clone()),
+        //     None => RetStatus::Never,
+        // };
 
-        Ok(TypedAstNode::from_ast(
-            node,
-            body_typed.eval_ty.clone(),
-            ret_status,
+        Ok(TypedAstNode::new(
+            TypedAstKind::Loop(Box::new(body_typed.clone())),
+            node.get_span(),
+            body_typed.eval_ty,
+            body_typed.ret,
         ))
     }
 
@@ -552,7 +613,17 @@ impl<'ip> TypeChecker {
 
                 let ret =
                     combine_branches(&if_typed.ret, &else_typed.ret, else_typed.span.clone())?;
-                (if_typed.eval_ty, ret)
+
+                return Ok(TypedAstNode::new(
+                    TypedAstKind::IfElse {
+                        condition: Box::new(cond_typed),
+                        ifbody: Box::new(if_typed.clone()),
+                        elsebody: None,
+                    },
+                    node.get_span(),
+                    if_typed.eval_ty,
+                    ret,
+                ));
             }
             (None, ExprContext::Stmt) => {
                 // no else branch, in statement context → type is unit
@@ -568,7 +639,16 @@ impl<'ip> TypeChecker {
             }
         };
 
-        Ok(TypedAstNode::from_ast(node, final_ty.0, final_ty.1))
+        Ok(TypedAstNode::new(
+            TypedAstKind::IfElse {
+                condition: Box::new(cond_typed),
+                ifbody: Box::new(if_typed),
+                elsebody: None,
+            },
+            node.get_span(),
+            final_ty.0,
+            final_ty.1,
+        ))
     }
 
     fn check_statements(
@@ -580,14 +660,21 @@ impl<'ip> TypeChecker {
         self.expr_ctx = ExprContext::Stmt;
 
         let mut block_ret = RetStatus::Never;
+        let mut stmts_typed = Vec::new();
         for stmt in stmts {
             let typed = self.infer_type(stmt)?;
             block_ret = combine_seq(&block_ret, &typed.ret);
+            stmts_typed.push(typed);
         }
 
         self.expr_ctx = old_ctx;
 
-        Ok(TypedAstNode::from_ast(node, Type::Unit, block_ret))
+        Ok(TypedAstNode::new(
+            TypedAstKind::Statements(stmts_typed),
+            node.get_span(),
+            Type::Unit,
+            block_ret,
+        ))
     }
 
     fn check_reassign_lhs(&mut self, node: &'ip AstNode<'ip>) -> CompilerResult<'ip, ()> {
@@ -621,9 +708,13 @@ impl<'ip> TypeChecker {
 
         self.check_reassign_lhs(lhs)?;
 
-        Ok(TypedAstNode::from_ast(
-            node,
-            rhs_typed.eval_ty,
+        Ok(TypedAstNode::new(
+            TypedAstKind::Reassign {
+                lhs: Box::new(var_typed),
+                rhs: Box::new(rhs_typed.clone()),
+            },
+            node.get_span(),
+            Type::Unit,
             rhs_typed.ret,
         ))
     }
@@ -649,11 +740,19 @@ impl<'ip> TypeChecker {
                 });
             }
         } else {
-            rhs_typed.eval_ty
+            rhs_typed.eval_ty.clone()
         };
 
         self.add_local_to_current(name.span.get_str(), final_ty.clone())?;
-        Ok(TypedAstNode::from_ast(node, Type::Unit, rhs_typed.ret))
+        Ok(TypedAstNode::new(
+            TypedAstKind::VarDef {
+                name: name.clone(),
+                rhs: Box::new(rhs_typed.clone()),
+            },
+            node.get_span(),
+            Type::Unit,
+            rhs_typed.ret,
+        ))
     }
 
     fn check_identifier(
@@ -661,7 +760,16 @@ impl<'ip> TypeChecker {
         ident: &'ip AstNode<'_>,
     ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
         if let Some(t) = self.get_local(ident.span.get_str()) {
-            Ok(TypedAstNode::from_ast(ident, t.clone(), RetStatus::Never))
+            if let AstKind::Identifier(tok) = &ident.kind {
+                Ok(TypedAstNode::new(
+                    TypedAstKind::Identifier(tok.clone()),
+                    ident.get_span(),
+                    t.clone(),
+                    RetStatus::Never,
+                ))
+            } else {
+                unreachable!()
+            }
         } else {
             Err(CompilerError::UndefinedIdentifier(ident.span.clone()))
         }
@@ -727,7 +835,16 @@ impl<'ip> TypeChecker {
             }),
         }?;
 
-        Ok(TypedAstNode::from_ast(node, eval_ty, ret))
+        Ok(TypedAstNode::new(
+            TypedAstKind::BinaryOp {
+                left: Box::new(ltyped),
+                op: op.clone(),
+                right: Box::new(rtyped),
+            },
+            node.get_span(),
+            eval_ty,
+            ret,
+        ))
     }
 
     fn check_unary(
@@ -737,17 +854,30 @@ impl<'ip> TypeChecker {
         operand: &'ip AstNode<'_>,
     ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
         let typed = self.infer_type(operand)?;
-        match (op.kind.clone(), typed.eval_ty.clone()) {
+
+        let (eval_ty, ret) = match (op.kind.clone(), typed.eval_ty.clone()) {
             (TokenKind::Minus, Type::Int)
             | (TokenKind::Plus, Type::Int)
-            | (TokenKind::Xor, Type::Int) => Ok(TypedAstNode::from_ast(node, Type::Int, typed.ret)),
-            (TokenKind::Not, Type::Bool) => Ok(TypedAstNode::from_ast(node, Type::Bool, typed.ret)),
-            _ => Err(CompilerError::OpTypeError {
+            | (TokenKind::Xor, Type::Int) => (Type::Int, typed.ret.clone()),
+            (TokenKind::Not, Type::Bool) => (Type::Bool, typed.ret.clone()),
+            _ => {
+                return Err(CompilerError::OpTypeError {
+                    op: op.clone(),
+                    lhs: None,
+                    rhs: typed.eval_ty.clone(),
+                })
+            }
+        };
+
+        Ok(TypedAstNode::new(
+            TypedAstKind::UnaryOp {
                 op: op.clone(),
-                lhs: None,
-                rhs: typed.eval_ty.clone(),
-            }),
-        }
+                operand: Box::new(typed),
+            },
+            node.get_span(),
+            eval_ty,
+            ret,
+        ))
     }
 
     fn ast_to_type(&self, ast: &AstNode<'ip>) -> CompilerResult<'ip, Type> {
@@ -787,16 +917,19 @@ impl<'ip> TypeChecker {
         items: &'ip [AstNode<'_>],
     ) -> CompilerResult<'ip, TypedAstNode<'ip>> {
         let mut last_ret = RetStatus::Never;
+        let mut typed_items = Vec::with_capacity(items.len());
 
         for item in items {
             let typed_item = self.infer_type(item)?;
             last_ret = combine_seq(&last_ret, &typed_item.ret);
+            typed_items.push(typed_item);
         }
 
-        Ok(TypedAstNode::from_ast(
-            node,
+        Ok(TypedAstNode::new(
+            TypedAstKind::Statements(typed_items),
+            node.get_span(),
             Type::Unit, // a block of items evaluates to unit
-            last_ret,   // return status propagated from last item
+            last_ret,   // return status propagated from all items
         ))
     }
 
@@ -831,7 +964,15 @@ impl<'ip> TypeChecker {
             }
         };
 
-        Ok(TypedAstNode::from_ast(ast, eval, lhs_ty.ret))
+        Ok(TypedAstNode::new(
+            TypedAstKind::As {
+                lhs: Box::new(lhs_ty.clone()),
+                rhs: rhs_ty.clone(),
+            },
+            ast.get_span(),
+            eval,
+            lhs_ty.ret,
+        ))
     }
 
     fn check_index(
@@ -849,7 +990,7 @@ impl<'ip> TypeChecker {
         }
 
         let lhs_typed = self.infer_type(lhs)?;
-        let eval_ty = if let Type::Array(ty, _) = lhs_typed.eval_ty {
+        let eval_ty = if let Type::Array(ty, _) = lhs_typed.eval_ty.clone() {
             *ty
         } else {
             return Err(CompilerError::TypeError(
@@ -858,8 +999,12 @@ impl<'ip> TypeChecker {
             ));
         };
 
-        Ok(TypedAstNode::from_ast(
-            ast,
+        Ok(TypedAstNode::new(
+            TypedAstKind::Index {
+                lhs: Box::new(lhs_typed.clone()),
+                rhs: Box::new(rhs_typed.clone()),
+            },
+            ast.get_span(),
             eval_ty,
             combine_seq(&lhs_typed.ret, &rhs_typed.ret),
         ))
@@ -868,12 +1013,22 @@ impl<'ip> TypeChecker {
     fn check_array(
         &mut self,
         ast: &'ip AstNode<'ip>,
-        items: &'ip [AstNode<'ip>],
+        items: &'ip [AstNode<'_>],
     ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
-        let first = self.infer_type(&items[1])?;
-        let (eval_ty, mut ret) = (first.eval_ty, first.ret);
+        if items.is_empty() {
+            return Err(CompilerError::TypeError(
+                "cannot create an empty array".into(),
+                ast.get_span(),
+            ));
+        }
 
-        for item in items {
+        let first_typed = self.infer_type(&items[0])?;
+        let eval_ty = first_typed.eval_ty.clone();
+        let mut ret = first_typed.ret.clone();
+
+        let mut typed_items = vec![first_typed];
+
+        for item in &items[1..] {
             let typed = self.infer_type(item)?;
             if typed.eval_ty != eval_ty {
                 return Err(CompilerError::TypeError(
@@ -885,11 +1040,16 @@ impl<'ip> TypeChecker {
                     item.get_span(),
                 ));
             }
-
             ret = combine_seq(&ret, &typed.ret);
+            typed_items.push(typed);
         }
 
-        Ok(TypedAstNode::from_ast(ast, eval_ty, ret))
+        Ok(TypedAstNode::new(
+            TypedAstKind::Array(typed_items),
+            ast.get_span(),
+            Type::Array(Box::new(eval_ty), items.len()),
+            ret,
+        ))
     }
 
     fn check_array_def(
@@ -899,19 +1059,23 @@ impl<'ip> TypeChecker {
         ty: &'ip AstNode<'ip>,
     ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
         if let TokenKind::Int(num) = size.kind {
-            let ty = self.ast_to_type(ty)?;
+            let elem_ty = self.ast_to_type(ty)?;
 
-            return Ok(TypedAstNode::from_ast(
-                ast,
-                Type::Array(Box::new(ty), num as usize),
+            Ok(TypedAstNode::new(
+                TypedAstKind::ArrayDef {
+                    ty: elem_ty.clone(),
+                    size: size.clone(),
+                },
+                ast.get_span(),
+                Type::Array(Box::new(elem_ty), num as usize),
                 RetStatus::Never,
-            ));
+            ))
+        } else {
+            Err(CompilerError::TypeError(
+                "array size can only be int type".into(),
+                ast.get_span(),
+            ))
         }
-
-        Err(CompilerError::TypeError(
-            "array size can only be int type".into(),
-            ast.get_span(),
-        ))
     }
 }
 

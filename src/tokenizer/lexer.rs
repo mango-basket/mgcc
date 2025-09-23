@@ -160,7 +160,7 @@ impl<'ip> Iterator for Lexer<'ip> {
             // if not a comment, it's a normal slash token
             return Some(Ok(Token::new(
                 TokenKind::Slash,
-                Span::new(start, 1, self.input),
+                Span::new(start, start + 1, self.input),
             )));
         }
 

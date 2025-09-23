@@ -8,7 +8,7 @@ const FP: u8 = 5;
 
 use crate::{
     error::{CompilerError, CompilerResult},
-    grammar::ast::{AstKind, AstNode},
+    grammar::ast::{TypedAstKind, TypedAstNode},
     semantic::type_check::{FnSignature, Type},
     tokenizer::token::{Span, Token, TokenKind},
 };
@@ -126,14 +126,14 @@ impl<'ip> Compiler {
 
     fn gen_branching(
         &mut self,
-        cond: &'ip AstNode<'ip>,
+        cond: &'ip TypedAstNode<'ip>,
         lbl_true: String,
         lbl_false: String,
     ) -> CompilerResult<'ip, Vec<Instr>> {
         let mut instrs = Vec::new();
 
         match &cond.kind {
-            AstKind::BinaryOp { left, op, right } => {
+            TypedAstKind::BinaryOp { left, op, right } => {
                 match op.kind {
                     TokenKind::And => {
                         // if its false jump straight to false
@@ -233,25 +233,25 @@ impl<'ip> Compiler {
         Ok(instrs)
     }
 
-    pub fn gen_instrs(&mut self, ast: &'ip AstNode<'ip>) -> CompilerResult<'ip, Vec<Instr>> {
+    pub fn gen_instrs(&mut self, ast: &'ip TypedAstNode<'ip>) -> CompilerResult<'ip, Vec<Instr>> {
         let mut instrs = Vec::new();
 
         match &ast.kind {
-            AstKind::Int(kind) => {
+            TypedAstKind::Int(kind) => {
                 if let TokenKind::Int(num) = kind {
                     instrs.push(Instr::Push(*num))
                 } else {
                     unreachable!()
                 }
             }
-            AstKind::Char(kind) => {
+            TypedAstKind::Char(kind) => {
                 if let TokenKind::Char(ch) = kind {
                     instrs.push(Instr::Push(*ch as u16))
                 } else {
                     unreachable!()
                 }
             }
-            AstKind::UnaryOp { op, operand } => {
+            TypedAstKind::UnaryOp { op, operand } => {
                 instrs.extend(self.gen_instrs(&operand)?);
                 match op.kind {
                     TokenKind::Plus => {}
@@ -266,11 +266,11 @@ impl<'ip> Compiler {
                     }
                 }
             }
-            AstKind::BinaryOp { left, op, right } => {
+            TypedAstKind::BinaryOp { left, op, right } => {
                 let sub_instrs = self.gen_bin_op(&left, &op, &right)?;
                 instrs.extend(sub_instrs)
             }
-            AstKind::Identifier(kind) => {
+            TypedAstKind::Identifier(kind) => {
                 if let TokenKind::Identifier(ref name) = kind {
                     if let Some(ofst) = self.lookup_local_slot(name) {
                         instrs.push(Instr::Loadr(FP, ofst));
@@ -281,18 +281,14 @@ impl<'ip> Compiler {
                     unreachable!();
                 }
             }
-            AstKind::Bool(kind) => {
+            TypedAstKind::Bool(kind) => {
                 if let TokenKind::Bool(bool) = kind {
                     instrs.push(Instr::Push(*bool as u16));
                 } else {
                     unreachable!()
                 }
             }
-            AstKind::VarDef {
-                name,
-                vartype: _,
-                rhs,
-            } => {
+            TypedAstKind::VarDef { name, rhs } => {
                 // locals are already allocated
                 let slot = self
                     .lookup_local_slot(name.span.get_str())
@@ -301,13 +297,13 @@ impl<'ip> Compiler {
                 instrs.extend(self.gen_instrs(&rhs)?);
                 instrs.push(Instr::Storer(FP, slot));
             }
-            AstKind::Statements(asts) => {
+            TypedAstKind::Statements(asts) => {
                 for ast in asts {
                     instrs.extend(self.gen_instrs(&ast)?);
                 }
             }
-            AstKind::Reassign { lhs, rhs } => match &lhs.kind {
-                AstKind::Identifier(ident_kind) => {
+            TypedAstKind::Reassign { lhs, rhs } => match &lhs.kind {
+                TypedAstKind::Identifier(ident_kind) => {
                     let ofst = if let TokenKind::Identifier(ref ident) = ident_kind {
                         if let Some(ofst) = self.lookup_local_slot(ident) {
                             ofst
@@ -321,14 +317,28 @@ impl<'ip> Compiler {
                     instrs.extend(self.gen_instrs(&rhs)?);
                     instrs.push(Instr::Storer(FP, ofst));
                 }
-                AstKind::Deref(inner) => {
+                TypedAstKind::Deref(inner) => {
                     instrs.extend(self.gen_instrs(&inner)?);
                     instrs.extend(self.gen_instrs(&rhs)?);
                     instrs.push(Instr::Storep);
                 }
+                TypedAstKind::Index {
+                    lhs: indexed,
+                    rhs: idx,
+                } => {
+                    instrs.extend(self.gen_instrs(indexed)?);
+                    instrs.extend(self.gen_instrs(idx)?);
+                    instrs.extend([
+                        Instr::Push(lhs.eval_ty.get_size() as u16),
+                        Instr::Mul,
+                        Instr::Sub,
+                    ]);
+                    instrs.extend(self.gen_instrs(rhs)?);
+                    instrs.push(Instr::Storep);
+                }
                 _ => {}
             },
-            AstKind::IfElse {
+            TypedAstKind::IfElse {
                 condition,
                 ifbody,
                 elsebody,
@@ -367,7 +377,7 @@ impl<'ip> Compiler {
                 // end label
                 instrs.push(Instr::Lbl(lbl_end));
             }
-            AstKind::Loop(body) => {
+            TypedAstKind::Loop(body) => {
                 let head_lbl = self.next_label();
                 let end_lbl = self.next_label();
 
@@ -380,7 +390,7 @@ impl<'ip> Compiler {
 
                 self.loop_stack.pop();
             }
-            AstKind::Continue => instrs.push(Instr::JmpLbl(
+            TypedAstKind::Continue => instrs.push(Instr::JmpLbl(
                 self.loop_stack
                     .last()
                     .ok_or(
@@ -392,7 +402,7 @@ impl<'ip> Compiler {
                     .0
                     .clone(),
             )),
-            AstKind::Break(ref opt_expr) => {
+            TypedAstKind::Break(ref opt_expr) => {
                 if let Some(expr) = opt_expr {
                     instrs.extend(self.gen_instrs(&expr)?);
                 };
@@ -410,9 +420,9 @@ impl<'ip> Compiler {
                         .clone(),
                 ));
             }
-            AstKind::Ref(inner) => {
+            TypedAstKind::Ref(inner) => {
                 match inner.kind {
-                    AstKind::Identifier(ref ident_kind) => {
+                    TypedAstKind::Identifier(ref ident_kind) => {
                         if let TokenKind::Identifier(ref name) = ident_kind {
                             if let Some(slot) = self.lookup_local_slot(name) {
                                 instrs.push(Instr::Pushr(5)); // push fp onto stack
@@ -427,29 +437,28 @@ impl<'ip> Compiler {
                             unreachable!();
                         }
                     }
-                    AstKind::Deref(ref inner) => instrs.extend(self.gen_instrs(&inner)?),
+                    TypedAstKind::Deref(ref inner) => instrs.extend(self.gen_instrs(&inner)?),
                     _ => unreachable!(),
                 }
             }
-            AstKind::Deref(inner) => {
+            TypedAstKind::Deref(inner) => {
                 instrs.extend(self.gen_instrs(&inner)?);
                 instrs.push(Instr::Loadp);
             }
-            AstKind::Disp(printable) => {
+            TypedAstKind::Disp(printable) => {
                 instrs.extend(self.gen_instrs(&printable)?);
                 instrs.push(Instr::Popr(0));
                 instrs.push(Instr::CallLbl("print".into())) // prints r0
             }
-            AstKind::Items(asts) => {
+            TypedAstKind::Items(asts) => {
                 for ast in asts {
                     instrs.extend(self.gen_instrs(&ast)?);
                 }
             }
-            AstKind::Func {
+            TypedAstKind::Func {
                 name,
                 params: _,
                 body,
-                ret: _,
             } => {
                 let fname = name.span.get_str().to_string();
                 instrs.push(Instr::Lbl(fname.clone()));
@@ -468,7 +477,7 @@ impl<'ip> Compiler {
                 let ofst = self.cur_func_ctx().fp_offset;
                 instrs.extend([
                     Instr::Push((ofst as i16) as u16),
-                    Instr::Pushr(SP),
+                    Instr::Pushr(FP),
                     Instr::Add,
                     Instr::Popr(SP),
                 ]);
@@ -485,7 +494,7 @@ impl<'ip> Compiler {
 
                 self.exit_function();
             }
-            AstKind::Return(expr_opt) => {
+            TypedAstKind::Return(expr_opt) => {
                 if let Some(expr) = expr_opt {
                     instrs.extend(self.gen_instrs(&expr)?); // compute return value
                     instrs.push(Instr::Storer(
@@ -498,7 +507,7 @@ impl<'ip> Compiler {
                 // epilogue
                 instrs.extend([Instr::Mov(SP, FP), Instr::Popr(FP), Instr::Ret]);
             }
-            AstKind::FuncCall { name, args } => {
+            TypedAstKind::FuncCall { name, args } => {
                 let sig = self
                     .functions
                     .get(name.span.get_str())
@@ -530,24 +539,59 @@ impl<'ip> Compiler {
                     ]);
                 }
             }
-            AstKind::As { lhs, rhs } => {
+            TypedAstKind::As { lhs, rhs } => {
                 instrs.extend(self.gen_instrs(lhs)?);
 
-                if let TokenKind::Identifier(ty) = &rhs.kind {
-                    match ty.as_str() {
-                        // if rhs is int, lhs is bool or char, both get reinterpretted
-                        "int" => {} // do nothing
+                match rhs.to_string().as_str() {
+                    // if rhs is int, lhs is bool or char, both get reinterpretted
+                    "int" => {} // do nothing
 
-                        // if rhs is char, lhs has to be int
-                        // mask the high bits out
-                        "char" => {
-                            instrs.extend([Instr::Push(0xFF), Instr::And]);
-                        }
-                        _ => unreachable!("type checker guarantees `as` coersions"),
+                    // if rhs is char, lhs has to be int
+                    // mask the high bits out
+                    "char" => {
+                        instrs.extend([Instr::Push(0xFF), Instr::And]);
                     }
-                } else {
-                    unreachable!("parser guarantees rhs is and identifier")
+                    _ => unreachable!("type checker guarantees `as` coersions"),
                 }
+            }
+            TypedAstKind::Index { lhs, rhs } => {
+                // type checker guarantees that lhs is an array
+                // lhs wil evaluate to an address
+                instrs.extend(self.gen_instrs(lhs)?);
+
+                // rhs will evaluate to an integer
+                instrs.extend(self.gen_instrs(rhs)?);
+                instrs.extend([
+                    Instr::Push(ast.eval_ty.get_padded_size() as u16),
+                    Instr::Mul,
+                ]);
+
+                // add them and access memory at the address
+                instrs.extend([Instr::Sub, Instr::Loadp]);
+            }
+            TypedAstKind::Array(items) => {
+                for item in items {
+                    instrs.extend(self.gen_instrs(item)?);
+                }
+
+                // Pointer to beginning of array
+                instrs.extend([
+                    Instr::Pushr(SP),
+                    Instr::Push(ast.eval_ty.get_padded_size() as u16),
+                    Instr::Add,
+                ]);
+            }
+            TypedAstKind::ArrayDef { .. } => {
+                // Allocate space and push pointer to beginning of array
+                instrs.extend([
+                    Instr::Pushr(SP),
+                    Instr::Push(ast.eval_ty.get_padded_size() as u16),
+                    Instr::Sub,
+                    Instr::Popr(SP),
+                    Instr::Pushr(SP),
+                    Instr::Push(ast.eval_ty.get_padded_size() as u16),
+                    Instr::Add,
+                ]);
             }
         }
 
@@ -556,9 +600,9 @@ impl<'ip> Compiler {
 
     fn gen_bin_op(
         &mut self,
-        left: &'ip AstNode<'_>,
+        left: &'ip TypedAstNode<'_>,
         op: &'ip Token<'_>,
-        right: &'ip AstNode<'_>,
+        right: &'ip TypedAstNode<'_>,
     ) -> Result<Vec<Instr>, CompilerError<'ip>> {
         let mut instrs = Vec::new();
 
