@@ -148,6 +148,17 @@ impl<'ip> TypedAstNode<'ip> {
                     rhs: rhs.clone(),
                 },
                 AstKind::Char(ch) => TypedAstKind::Char(ch.clone()),
+                AstKind::Index { lhs, rhs } => TypedAstKind::Index {
+                    lhs: Box::new(TypedAstNode::from_ast(lhs, eval_ty.clone(), ret.clone())),
+                    rhs: Box::new(TypedAstNode::from_ast(rhs, eval_ty.clone(), ret.clone())),
+                },
+                AstKind::Array(items) => TypedAstKind::Array(
+                    items
+                        .iter()
+                        .map(|item| TypedAstNode::from_ast(item, eval_ty.clone(), ret.clone()))
+                        .collect(),
+                ),
+                AstKind::ArrayDef(token_kind) => TypedAstKind::ArrayDef(token_kind.clone()),
             }
         }
 
@@ -226,6 +237,12 @@ pub enum GenericAstKind<'ip, Child> {
         lhs: Box<Child>,
         rhs: Token<'ip>,
     },
+    Index {
+        lhs: Box<Child>,
+        rhs: Box<Child>,
+    },
+    Array(Vec<Child>),
+    ArrayDef(TokenKind), // var a[4];
 }
 
 impl<'ip, Child> GenericAstKind<'ip, Child> {
@@ -233,7 +250,7 @@ impl<'ip, Child> GenericAstKind<'ip, Child> {
         use GenericAstKind::*;
 
         match self {
-            Identifier(_) | Int(_) | Bool(_) | Char(_) => true,
+            Identifier(_) | Int(_) | Bool(_) | Char(_) | Array(_) => true,
             Ref(_) => false,
             Deref(_) => false,
             UnaryOp { .. } => false,
@@ -251,6 +268,8 @@ impl<'ip, Child> GenericAstKind<'ip, Child> {
             Disp(_) => false,
             FuncCall { .. } => false,
             As { .. } => false,
+            ArrayDef(_) => false,
+            Index { .. } => false,
         }
     }
 }
@@ -382,8 +401,22 @@ impl<'ip> AstNode<'ip> {
                     .join(", ");
                 format!("{pad}Call {} ({params_str})", name.span.to_string())
             }
-            GenericAstKind::As { lhs, rhs } => {
+            AstKind::As { lhs, rhs } => {
                 format!("{pad}{} as {}", lhs.pretty(0), rhs.span.get_str())
+            }
+            AstKind::Index { lhs, rhs } => {
+                format!("{pad}{}[{}]", lhs.pretty(0), rhs.pretty(0))
+            }
+            AstKind::Array(items) => {
+                let mut s = format!("{}Array", pad);
+                for item in items {
+                    s.push('\n');
+                    s.push_str(&item.pretty(indent + 1));
+                }
+                s
+            }
+            AstKind::ArrayDef(_) => {
+                format!("{}ArrayDef({})", pad, self.span.get_str())
             }
         }
     }
