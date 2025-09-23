@@ -176,6 +176,8 @@ impl<'ip> Iterator for Lexer<'ip> {
             b')' => Ok((TokenKind::Rparen, 1)),
             b'{' => Ok((TokenKind::Lbrace, 1)),
             b'}' => Ok((TokenKind::Rbrace, 1)),
+            b'[' => Ok((TokenKind::Lsquare, 1)),
+            b']' => Ok((TokenKind::Rsquare, 1)),
             b':' => Ok((TokenKind::Colon, 1)),
             b'^' => Ok((TokenKind::Xor, 1)),
             b'~' => Ok((TokenKind::Bnot, 1)),

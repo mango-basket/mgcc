@@ -35,12 +35,10 @@ impl Keyword {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TokenKind {
     Int(u16),
-    // Float(f32),
     Bool(bool),
     Keyword(Keyword),
     Identifier(String),
     Char(u8),
-    // String(String),
     Plus,
     Minus,
     Star,
@@ -69,59 +67,10 @@ pub enum TokenKind {
     Rparen,
     Lbrace,
     Rbrace,
+    Lsquare,
+    Rsquare,
     Comma,
     Arrow,
-}
-
-impl TokenKind {
-    //     pub fn get_static_str(&self) -> &'static str {
-    //         match self {
-    //             TokenKind::Eq => "==",
-    //             TokenKind::Neq => "!=",
-    //             TokenKind::Lt => "<",
-    //             TokenKind::Gt => ">",
-    //             TokenKind::Lte => "<=",
-    //             TokenKind::Gte => ">=",
-    //             TokenKind::Assign => "=",
-    //             TokenKind::Plus => "+",
-    //             TokenKind::Minus => "-",
-    //             TokenKind::Star => "*",
-    //             TokenKind::Slash => "/",
-    //             TokenKind::Lparen => "(",
-    //             TokenKind::Rparen => ")",
-    //             TokenKind::Lbrace => "{",
-    //             TokenKind::Rbrace => "}",
-    //             TokenKind::Colon => ":",
-    //             TokenKind::LineEnd => "end of line",
-    //             TokenKind::Identifier(_) => "identifier",
-    //             TokenKind::Int(_) => "integer literal",
-    //             TokenKind::Bool(_) => "boolean literal",
-    //             TokenKind::Not => "!",
-    //             TokenKind::Keyword(k) => match k {
-    //                 Keyword::Var => "var",
-    //                 Keyword::If => "if",
-    //                 Keyword::Else => "else",
-    //                 Keyword::Loop => "loop",
-    //                 Keyword::Break => "break",
-    //                 Keyword::Continue => "continue",
-    //                 Keyword::Disp => "disp",
-    //                 Keyword::Fn => "fn",
-    //                 Keyword::Return => "return",
-    //             },
-    //             TokenKind::And => "&&",
-    //             TokenKind::Or => "||",
-    //             TokenKind::Band => "&",
-    //             TokenKind::Bor => "|",
-    //             TokenKind::Xor => "^",
-    //             TokenKind::Bnot => "~",
-    //             TokenKind::Shl => "<<",
-    //             TokenKind::Shr => ">>",
-    //             TokenKind::Mod => "%",
-    //             TokenKind::Ref => "@",
-    //             TokenKind::Comma => ",",
-    //             TokenKind::Arrow => "->",
-    //         }
-    //     }
 }
 
 #[derive(Clone, Default)]
