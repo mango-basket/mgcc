@@ -561,25 +561,35 @@ impl<'ip> Compiler {
 
                 // rhs will evaluate to an integer
                 instrs.extend(self.gen_instrs(rhs)?);
-                instrs.extend([
-                    Instr::Push(ast.eval_ty.get_padded_size() as u16),
-                    Instr::Mul,
-                ]);
+                instrs.extend([Instr::Push(ast.eval_ty.get_size() as u16), Instr::Mul]);
 
                 // add them and access memory at the address
                 instrs.extend([Instr::Sub, Instr::Loadp]);
             }
             TypedAstKind::Array(items) => {
-                for item in items {
-                    instrs.extend(self.gen_instrs(item)?);
-                }
-
-                // Pointer to beginning of array
                 instrs.extend([
+                    Instr::Pushr(SP),
+                    Instr::Push(ast.eval_ty.get_padded_size() as u16),
+                    Instr::Sub,
+                    Instr::Popr(SP),
                     Instr::Pushr(SP),
                     Instr::Push(ast.eval_ty.get_padded_size() as u16),
                     Instr::Add,
                 ]);
+
+                for (idx, item) in items.iter().enumerate() {
+                    instrs.extend([
+                        Instr::Pushr(SP),
+                        Instr::Push(ast.eval_ty.get_padded_size() as u16 + 2),
+                        Instr::Add,
+                        Instr::Push(idx as u16),
+                        Instr::Push(item.eval_ty.get_size() as u16),
+                        Instr::Mul,
+                        Instr::Sub,
+                    ]);
+                    instrs.extend(self.gen_instrs(item)?);
+                    instrs.push(Instr::Storep);
+                }
             }
             TypedAstKind::ArrayDef { .. } => {
                 // Allocate space and push pointer to beginning of array

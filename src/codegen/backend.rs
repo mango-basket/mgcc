@@ -62,6 +62,8 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::CallLbl(id) => format!("CALL {}", id),
             Instr::Loadr(rs, imm) => format!("LOADR [{}, {}]", reg(rs), imm),
             Instr::Storer(rd, imm) => format!("STORER [{}, {}]", reg(rd), imm),
+            Instr::Loadpb => "LOADPB".into(),
+            Instr::Storepb => "STOREPB".into(),
         });
         code.push('\n');
     }
