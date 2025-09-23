@@ -541,7 +541,7 @@ impl<'ip> Compiler {
                         // if rhs is char, lhs has to be int
                         // mask the high bits out
                         "char" => {
-                            instrs.extend([Instr::Push(0x0F), Instr::And]);
+                            instrs.extend([Instr::Push(0xFF), Instr::And]);
                         }
                         _ => unreachable!("type checker guarantees `as` coersions"),
                     }
@@ -570,17 +570,7 @@ impl<'ip> Compiler {
             TokenKind::Minus => instrs.push(Instr::Sub),
             TokenKind::Star => instrs.push(Instr::Mul),
             TokenKind::Slash => instrs.push(Instr::Div),
-            TokenKind::Mod => instrs.extend([
-                Instr::Popr(1),
-                Instr::Popr(0),
-                Instr::Pushr(0),
-                Instr::Pushr(0),
-                Instr::Pushr(1),
-                Instr::Div,
-                Instr::Pushr(1),
-                Instr::Mul,
-                Instr::Sub,
-            ]),
+            TokenKind::Mod => instrs.push(Instr::Mod),
 
             // Comparison
             TokenKind::Eq

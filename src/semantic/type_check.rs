@@ -363,9 +363,9 @@ impl<'ip> TypeChecker {
     ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
         let inner_typed = self.infer_type(inner)?;
 
-        if inner_typed.eval_ty == Type::Unit {
+        if inner_typed.eval_ty != Type::Char {
             return Err(CompilerError::TypeError(
-                "cannot display unit type".into(),
+                format!("cannot display {} type", inner_typed.eval_ty.to_string()),
                 inner.get_slice(),
             ));
         }

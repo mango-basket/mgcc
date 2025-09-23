@@ -36,6 +36,7 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::Neg => "NEG".into(),
             Instr::Not => "NOT".into(),
             Instr::Cmp => "CMP".into(),
+            Instr::Mod => "MOD".into(),
             Instr::Jmp(ofst) => format!("JMP8 {}", ofst),
             Instr::Jlt(ofst) => format!("JLT8 {}", ofst),
             Instr::Jgt(ofst) => format!("JGT8 {}", ofst),
