@@ -27,6 +27,7 @@ pub enum Type {
     Unit,
     Char,
     Ref(Box<Type>),
+    Array(Box<Type>, usize),
     Fn { params: Vec<Type>, ret: Box<Type> },
 }
 
@@ -46,7 +47,26 @@ impl Type {
                     .collect::<String>(),
                 ret.to_string()
             ),
+            Type::Array(inner, size) => format!("{}[{}]", inner.to_string(), size),
         }
+    }
+
+    pub fn get_size(&self) -> usize {
+        match self {
+            Type::Int => 2,
+            Type::Bool => 1,
+            Type::Unit => 0,
+            Type::Char => 1,
+            Type::Ref(_) => 2,
+            Type::Array(inner, size) => inner.get_size() * size,
+
+            // Reference
+            Type::Fn { .. } => 2,
+        }
+    }
+
+    pub fn get_padded_size(&self) -> usize {
+        self.get_size() + (self.get_size() % 2)
     }
 }
 
@@ -122,8 +142,9 @@ impl<'ip> TypeChecker {
         }
 
         let slot = ctx.fp_offset;
-        ctx.symbols.insert(name.to_string(), (Some(slot), ty));
-        ctx.fp_offset -= 2;
+        ctx.symbols
+            .insert(name.to_string(), (Some(slot), ty.clone()));
+        ctx.fp_offset -= ty.get_padded_size() as i8;
 
         Ok(())
     }
@@ -155,15 +176,15 @@ impl<'ip> TypeChecker {
 
     pub fn declare_function(&mut self, name: &str, signature: FnSignature) -> &mut FunctionContext {
         let has_ret_slot = if signature.ret != Type::Unit { 1 } else { 0 };
-        let param_count = signature.params.len() as i8;
+        let param_size: usize = signature.params.iter().map(|ty| ty.get_padded_size()).sum();
         let initial_fp_offset = 1      // old fp at fp+2
                               + 1      // return address
-                              + param_count  // params (1 unit per param)
+                              + param_size  // params (1 unit per param)
                               + has_ret_slot; // optional return slot
 
         let ctx = FunctionContext {
             symbols: HashMap::new(),
-            fp_offset: initial_fp_offset * 2, // word size
+            fp_offset: initial_fp_offset as i8 * 2, // word size
             signature,
         };
 
@@ -207,6 +228,9 @@ impl<'ip> TypeChecker {
             AstKind::Return(ret_opt) => self.check_return(ast, ret_opt),
             AstKind::FuncCall { name, args } => self.check_func_call(ast, name, args),
             AstKind::As { lhs, rhs } => self.check_as(ast, lhs, rhs),
+            AstKind::Index { lhs, rhs } => self.check_index(ast, lhs, rhs),
+            AstKind::Array(items) => self.check_array(ast, items),
+            AstKind::ArrayDef { size, ty } => self.check_array_def(ast, size, ty),
         }
     }
 
@@ -328,7 +352,7 @@ impl<'ip> TypeChecker {
             RetStatus::Maybe(_) => {
                 return Err(CompilerError::TypeError(
                     "function body cannot have paths that may or may not return".into(),
-                    body.get_slice(),
+                    body.get_span(),
                 ));
             }
             RetStatus::Always(ref ty) => {
@@ -336,7 +360,7 @@ impl<'ip> TypeChecker {
                     return Err(CompilerError::UnexpectedType {
                         got: ty.clone(),
                         expected: ret_ty.to_string(),
-                        slice: body.get_slice(),
+                        slice: body.get_span(),
                     });
                 }
             }
@@ -345,7 +369,7 @@ impl<'ip> TypeChecker {
                     return Err(CompilerError::UnexpectedType {
                         got: Type::Unit,
                         expected: ret_ty.to_string(),
-                        slice: body.get_slice(),
+                        slice: body.get_span(),
                     });
                 }
             }
@@ -366,7 +390,7 @@ impl<'ip> TypeChecker {
         if inner_typed.eval_ty != Type::Char {
             return Err(CompilerError::TypeError(
                 format!("cannot display {} type", inner_typed.eval_ty.to_string()),
-                inner.get_slice(),
+                inner.get_span(),
             ));
         }
 
@@ -392,7 +416,7 @@ impl<'ip> TypeChecker {
                     "cannot dereference type {}",
                     inner_typed.eval_ty.to_string()
                 ),
-                inner.get_slice(),
+                inner.get_span(),
             ))
         }
     }
@@ -409,7 +433,7 @@ impl<'ip> TypeChecker {
             _ => {
                 return Err(CompilerError::TypeError(
                     "cannot take address of this expression".into(),
-                    node.get_slice(),
+                    node.get_span(),
                 ))
             }
         };
@@ -446,7 +470,7 @@ impl<'ip> TypeChecker {
                                 existing.to_string(),
                                 this_ty.to_string()
                             ),
-                            expr_opt.as_ref().unwrap().get_slice(),
+                            expr_opt.as_ref().unwrap().get_span(),
                         ));
                     }
                 }
@@ -455,7 +479,7 @@ impl<'ip> TypeChecker {
             // break outside loop -> semantic error
             return Err(CompilerError::Semantic {
                 err: "break statement used outside of a loop".to_string(),
-                span: expr_opt.as_ref().map(|b| b.get_slice()).unwrap_or_default(),
+                span: expr_opt.as_ref().map(|b| b.get_span()).unwrap_or_default(),
             });
         }
 
@@ -502,7 +526,7 @@ impl<'ip> TypeChecker {
             return Err(CompilerError::UnexpectedType {
                 got: cond_typed.eval_ty,
                 expected: "bool".into(),
-                slice: condition.get_slice(),
+                slice: condition.get_span(),
             });
         }
 
@@ -522,7 +546,7 @@ impl<'ip> TypeChecker {
                     return Err(CompilerError::UnexpectedType {
                         got: else_typed.eval_ty,
                         expected: if_typed.eval_ty.to_string(),
-                        slice: else_ast.get_slice(),
+                        slice: else_ast.get_span(),
                     });
                 }
 
@@ -539,7 +563,7 @@ impl<'ip> TypeChecker {
                 // no else branch in expression context → error
                 return Err(CompilerError::TypeError(
                     "if expression without else branch cannot be used in expression context".into(),
-                    ifbody.get_slice(),
+                    ifbody.get_span(),
                 ));
             }
         };
@@ -566,6 +590,18 @@ impl<'ip> TypeChecker {
         Ok(TypedAstNode::from_ast(node, Type::Unit, block_ret))
     }
 
+    fn check_reassign_lhs(&mut self, node: &'ip AstNode<'ip>) -> CompilerResult<'ip, ()> {
+        match &node.kind {
+            AstKind::Deref(inner) => self.check_reassign_lhs(&inner),
+            AstKind::Index { .. } => Ok(()),
+            AstKind::Identifier(_) => Ok(()),
+            _ => Err(CompilerError::Semantic {
+                err: "expected ident, *deref or idx[]".into(),
+                span: node.get_span(),
+            }),
+        }
+    }
+
     fn check_reassign(
         &mut self,
         node: &'ip AstNode<'_>,
@@ -579,9 +615,11 @@ impl<'ip> TypeChecker {
             return Err(CompilerError::UnexpectedType {
                 got: rhs_typed.eval_ty,
                 expected: var_typed.eval_ty.to_string(),
-                slice: rhs.get_slice(),
+                slice: rhs.get_span(),
             });
         }
+
+        self.check_reassign_lhs(lhs)?;
 
         Ok(TypedAstNode::from_ast(
             node,
@@ -607,7 +645,7 @@ impl<'ip> TypeChecker {
                 return Err(CompilerError::UnexpectedType {
                     got: rhs_typed.eval_ty,
                     expected: annotated_ty.to_string(),
-                    slice: rhs.get_slice(),
+                    slice: rhs.get_span(),
                 });
             }
         } else {
@@ -715,12 +753,12 @@ impl<'ip> TypeChecker {
     fn ast_to_type(&self, ast: &AstNode<'ip>) -> CompilerResult<'ip, Type> {
         match &ast.kind {
             AstKind::Identifier(_) => {
-                if let Some(t) = self.type_env.get(ast.get_slice().get_str()) {
+                if let Some(t) = self.type_env.get(ast.get_span().get_str()) {
                     Ok(t.clone())
                 } else {
                     Err(CompilerError::TypeError(
-                        format!("'{}' is not a known type", ast.get_slice().get_str()),
-                        ast.get_slice(),
+                        format!("'{}' is not a known type", ast.get_span().get_str()),
+                        ast.get_span(),
                     ))
                 }
             }
@@ -728,9 +766,17 @@ impl<'ip> TypeChecker {
                 let inner_ty = self.ast_to_type(&inner)?;
                 Ok(Type::Ref(Box::new(inner_ty)))
             }
+            AstKind::ArrayDef { size, ty } => {
+                let inner_ty = self.ast_to_type(&ty)?;
+                if let TokenKind::Int(num) = size.kind {
+                    Ok(Type::Array(Box::new(inner_ty), num as usize))
+                } else {
+                    unreachable!()
+                }
+            }
             other => Err(CompilerError::Semantic {
                 err: format!("invalid AST {:#?} in type annotation", other),
-                span: ast.get_slice(),
+                span: ast.get_span(),
             }),
         }
     }
@@ -780,12 +826,92 @@ impl<'ip> TypeChecker {
             (a, b) => {
                 return Err(CompilerError::TypeError(
                     format!("cannot cast {} as {}", a.to_string(), b.to_string()),
-                    ast.get_slice(),
+                    ast.get_span(),
                 ))
             }
         };
 
         Ok(TypedAstNode::from_ast(ast, eval, lhs_ty.ret))
+    }
+
+    fn check_index(
+        &mut self,
+        ast: &'ip AstNode<'ip>,
+        lhs: &'ip AstNode<'ip>,
+        rhs: &'ip AstNode<'ip>,
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let rhs_typed = self.infer_type(rhs)?;
+        if !matches!(rhs_typed.eval_ty, Type::Int) {
+            return Err(CompilerError::TypeError(
+                format!("cannot index with type {}", rhs_typed.eval_ty.to_string()),
+                lhs.get_span(),
+            ));
+        }
+
+        let lhs_typed = self.infer_type(lhs)?;
+        let eval_ty = if let Type::Array(ty, _) = lhs_typed.eval_ty {
+            *ty
+        } else {
+            return Err(CompilerError::TypeError(
+                format!("cannot index type {}", lhs_typed.eval_ty.to_string()),
+                lhs.get_span(),
+            ));
+        };
+
+        Ok(TypedAstNode::from_ast(
+            ast,
+            eval_ty,
+            combine_seq(&lhs_typed.ret, &rhs_typed.ret),
+        ))
+    }
+
+    fn check_array(
+        &mut self,
+        ast: &'ip AstNode<'ip>,
+        items: &'ip [AstNode<'ip>],
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let first = self.infer_type(&items[1])?;
+        let (eval_ty, mut ret) = (first.eval_ty, first.ret);
+
+        for item in items {
+            let typed = self.infer_type(item)?;
+            if typed.eval_ty != eval_ty {
+                return Err(CompilerError::TypeError(
+                    format!(
+                        "type {} does not match that of previous elements, {}",
+                        typed.eval_ty.to_string(),
+                        eval_ty.to_string()
+                    ),
+                    item.get_span(),
+                ));
+            }
+
+            ret = combine_seq(&ret, &typed.ret);
+        }
+
+        Ok(TypedAstNode::from_ast(ast, eval_ty, ret))
+    }
+
+    fn check_array_def(
+        &self,
+        ast: &'ip AstNode<'ip>,
+        size: &'ip Token<'ip>,
+        ty: &'ip AstNode<'ip>,
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        if let TokenKind::Int(num) = size.kind {
+            let ty = self.ast_to_type(ty)?;
+
+            return Ok(TypedAstNode::from_ast(
+                ast,
+                Type::Array(Box::new(ty), num as usize),
+                RetStatus::Never,
+            ));
+        }
+
+        Err(CompilerError::TypeError(
+            "array size can only be int type".into(),
+            ast.get_span(),
+        ))
     }
 }
 

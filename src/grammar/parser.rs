@@ -288,9 +288,14 @@ impl<'ip> Parser<'ip> {
                 }
                 TokenKind::Lsquare => {
                     self.bump()?;
+                    let size = expect_match!(self, TokenKind::Int(_))?;
+                    expect_match!(self, TokenKind::Colon)?;
                     let inner = self.parse_type()?;
                     expect_match!(self, TokenKind::Rsquare)?;
-                    Ok(self.gen_node(AstKind::Array(vec![inner])))
+                    Ok(self.gen_node(AstKind::ArrayDef {
+                        size,
+                        ty: Box::new(inner),
+                    }))
                 }
                 _ => Err(CompilerError::UnexpectedToken {
                     got: tok.clone(),
@@ -333,8 +338,13 @@ impl<'ip> Parser<'ip> {
             TokenKind::Lsquare => {
                 self.start_span()?;
                 let size = expect_match!(self, TokenKind::Int(_))?;
+                expect_match!(self, TokenKind::Colon)?;
+                let ty = self.parse_type()?;
                 expect_match!(self, TokenKind::Rsquare)?;
-                self.gen_node(AstKind::ArrayDef(size))
+                self.gen_node(AstKind::ArrayDef {
+                    size,
+                    ty: Box::new(ty),
+                })
             }
             _ => unreachable!(),
         };
@@ -715,6 +725,17 @@ impl<'ip> Parser<'ip> {
         }
 
         expect_match!(self, TokenKind::Rsquare)?;
+
+        if elems.len() == 0 {
+            return Err(CompilerError::Semantic {
+                err: "zero-length arrays are not allowed".into(),
+                span: Span {
+                    start: self.slice_stack.pop().unwrap(),
+                    end: self.pos as usize,
+                    input: self.input,
+                },
+            });
+        }
 
         Ok(self.gen_node(AstKind::Array(elems)))
     }

@@ -158,7 +158,10 @@ impl<'ip> TypedAstNode<'ip> {
                         .map(|item| TypedAstNode::from_ast(item, eval_ty.clone(), ret.clone()))
                         .collect(),
                 ),
-                AstKind::ArrayDef(token_kind) => TypedAstKind::ArrayDef(token_kind.clone()),
+                AstKind::ArrayDef { size, ty } => TypedAstKind::ArrayDef {
+                    size: size.clone(),
+                    ty: Box::new(TypedAstNode::from_ast(ty, eval_ty, ret)),
+                },
             }
         }
 
@@ -242,7 +245,10 @@ pub enum GenericAstKind<'ip, Child> {
         rhs: Box<Child>,
     },
     Array(Vec<Child>),
-    ArrayDef(Token<'ip>), // var a[4];
+    ArrayDef {
+        size: Token<'ip>,
+        ty: Box<Child>,
+    }, // var a[4];
 }
 
 impl<'ip, Child> GenericAstKind<'ip, Child> {
@@ -268,7 +274,7 @@ impl<'ip, Child> GenericAstKind<'ip, Child> {
             Disp(_) => false,
             FuncCall { .. } => false,
             As { .. } => false,
-            ArrayDef(_) => false,
+            ArrayDef { .. } => false,
             Index { .. } => false,
         }
     }
@@ -415,13 +421,13 @@ impl<'ip> AstNode<'ip> {
                 }
                 s
             }
-            AstKind::ArrayDef(_) => {
+            AstKind::ArrayDef { .. } => {
                 format!("{}ArrayDef({})", pad, self.span.get_str())
             }
         }
     }
 
-    pub fn get_slice(&self) -> Span<'ip> {
+    pub fn get_span(&self) -> Span<'ip> {
         self.span.clone()
     }
 }

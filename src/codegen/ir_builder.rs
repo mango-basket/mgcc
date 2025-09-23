@@ -275,7 +275,7 @@ impl<'ip> Compiler {
                     if let Some(ofst) = self.lookup_local_slot(name) {
                         instrs.push(Instr::Loadr(FP, ofst));
                     } else {
-                        return Err(CompilerError::UndefinedIdentifier(ast.get_slice()));
+                        return Err(CompilerError::UndefinedIdentifier(ast.get_span()));
                     }
                 } else {
                     unreachable!();
@@ -312,7 +312,7 @@ impl<'ip> Compiler {
                         if let Some(ofst) = self.lookup_local_slot(ident) {
                             ofst
                         } else {
-                            return Err(CompilerError::UndefinedIdentifier(lhs.get_slice()));
+                            return Err(CompilerError::UndefinedIdentifier(lhs.get_span()));
                         }
                     } else {
                         unreachable!()
@@ -386,7 +386,7 @@ impl<'ip> Compiler {
                     .ok_or(
                         CompilerError::Semantic {
                             err: "continue found outside loop (unreachable)".into(),
-                            span: ast.get_slice(),
+                            span: ast.get_span(),
                         }, // Shouldnt ever happen because of the semantic analyzer
                     )?
                     .0
@@ -403,7 +403,7 @@ impl<'ip> Compiler {
                         .ok_or(
                             CompilerError::Semantic {
                                 err: "break found outside loop (unreachable)".into(),
-                                span: ast.get_slice(),
+                                span: ast.get_span(),
                             }, // Shouldnt ever happen because of the semantic analyzer
                         )?
                         .1
@@ -421,7 +421,7 @@ impl<'ip> Compiler {
                                 instrs.push(Instr::Mul);
                                 instrs.push(Instr::Sub); // addr = fp - slot * 2
                             } else {
-                                return Err(CompilerError::UndefinedIdentifier(inner.get_slice()));
+                                return Err(CompilerError::UndefinedIdentifier(inner.get_span()));
                             }
                         } else {
                             unreachable!();
