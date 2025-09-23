@@ -244,6 +244,13 @@ impl<'ip> Compiler {
                     unreachable!()
                 }
             }
+            AstKind::Char(kind) => {
+                if let TokenKind::Char(ch) = kind {
+                    instrs.push(Instr::Push(*ch as u16))
+                } else {
+                    unreachable!()
+                }
+            }
             AstKind::UnaryOp { op, operand } => {
                 instrs.extend(self.gen_instrs(&operand)?);
                 match op.kind {
@@ -288,7 +295,7 @@ impl<'ip> Compiler {
             } => {
                 // locals are already allocated
                 let slot = self
-                    .lookup_local_slot(name.slice.get_str())
+                    .lookup_local_slot(name.span.get_str())
                     .expect("unallocated local detected in codegen");
 
                 instrs.extend(self.gen_instrs(&rhs)?);
@@ -444,7 +451,7 @@ impl<'ip> Compiler {
                 body,
                 ret: _,
             } => {
-                let fname = name.slice.get_str().to_string();
+                let fname = name.span.get_str().to_string();
                 instrs.push(Instr::Lbl(fname.clone()));
 
                 self.enter_function(&fname)
@@ -494,7 +501,7 @@ impl<'ip> Compiler {
             AstKind::FuncCall { name, args } => {
                 let sig = self
                     .functions
-                    .get(name.slice.get_str())
+                    .get(name.span.get_str())
                     .map(|f| f.signature.clone())
                     .expect("call to undeclared function");
 
@@ -508,7 +515,7 @@ impl<'ip> Compiler {
                     instrs.extend(self.gen_instrs(arg)?);
                 }
 
-                instrs.push(Instr::CallLbl(name.slice.get_str().to_string()));
+                instrs.push(Instr::CallLbl(name.span.get_str().to_string()));
 
                 // pop args (caller cleanup)
                 let arg_count = args.len();
@@ -521,6 +528,25 @@ impl<'ip> Compiler {
                         Instr::Add,
                         Instr::Popr(4),
                     ]);
+                }
+            }
+            AstKind::As { lhs, rhs } => {
+                instrs.extend(self.gen_instrs(lhs)?);
+
+                if let TokenKind::Identifier(ty) = &rhs.kind {
+                    match ty.as_str() {
+                        // if rhs is int, lhs is bool or char, both get reinterpretted
+                        "int" => {} // do nothing
+
+                        // if rhs is char, lhs has to be int
+                        // mask the high bits out
+                        "char" => {
+                            instrs.extend([Instr::Push(0x0F), Instr::And]);
+                        }
+                        _ => unreachable!("type checker guarantees `as` coersions"),
+                    }
+                } else {
+                    unreachable!("parser guarantees rhs is and identifier")
                 }
             }
         }

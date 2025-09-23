@@ -1,6 +1,6 @@
 use std::{
     iter::{Enumerate, Peekable},
-    str::Chars,
+    str::Bytes,
 };
 
 use crate::{
@@ -10,22 +10,22 @@ use crate::{
 
 pub struct Lexer<'ip> {
     input: &'ip str,
-    input_iter: Peekable<Enumerate<Chars<'ip>>>,
+    input_iter: Peekable<Enumerate<Bytes<'ip>>>,
 }
 
 impl<'ip> Lexer<'ip> {
     pub fn new(input: &'ip str) -> Self {
         Self {
             input,
-            input_iter: input.chars().enumerate().peekable(),
+            input_iter: input.bytes().enumerate().peekable(),
         }
     }
 
-    fn is_ident(ch: &char, is_starting: bool) -> bool {
-        ch.is_ascii_alphabetic() || ch == &'_' || (!is_starting && ch.is_ascii_digit())
+    fn is_ident(ch: &u8, is_starting: bool) -> bool {
+        ch.is_ascii_alphabetic() || ch == &b'_' || (!is_starting && ch.is_ascii_digit())
     }
 
-    fn get_int(&mut self, start_char: char) -> (TokenKind, usize) {
+    fn get_int(&mut self, start_char: u8) -> CompilerResult<'ip, (TokenKind, usize)> {
         let mut int = ((start_char as u8) - b'0') as u16;
         let mut len = 1;
         while let Some((_, ch)) = self.input_iter.next_if(|(_, ch)| ch.is_ascii_digit()) {
@@ -35,46 +35,46 @@ impl<'ip> Lexer<'ip> {
             len += 1;
         }
 
-        (TokenKind::Int(int), len)
+        Ok((TokenKind::Int(int), len))
     }
 
-    fn get_ident(&mut self, start_char: char) -> (TokenKind, usize) {
-        let mut ident = String::from(start_char);
+    fn get_ident(&mut self, start_char: u8) -> CompilerResult<'ip, (TokenKind, usize)> {
+        let mut ident = String::from(start_char as char);
         let mut len = 1;
         while let Some((_, ch)) = self.input_iter.next_if(|(_, ch)| Self::is_ident(ch, false)) {
-            ident.push(ch);
+            ident.push(ch as char);
             len += 1;
         }
 
         if ident == "true" || ident == "false" {
-            (TokenKind::Bool(ident == "true"), len)
+            Ok((TokenKind::Bool(ident == "true"), len))
         } else if let Some(keyword) = Keyword::from_string(&ident) {
-            (TokenKind::Keyword(keyword), len)
+            Ok((TokenKind::Keyword(keyword), len))
         } else {
-            (TokenKind::Identifier(ident.clone()), len)
+            Ok((TokenKind::Identifier(ident.clone()), len))
         }
     }
 
     fn get_twochar_tok(
         &mut self,
-        seconds: &[(char, TokenKind)],
+        seconds: &[(u8, TokenKind)],
         fallback: TokenKind,
-    ) -> (TokenKind, usize) {
+    ) -> CompilerResult<'ip, (TokenKind, usize)> {
         if let Some((_, ch)) = self.input_iter.peek() {
             for (expected_char, kind) in seconds {
                 if ch == expected_char {
                     self.input_iter.next(); // consume the matched char
-                    return (kind.clone(), 2);
+                    return Ok((kind.clone(), 2));
                 }
             }
         }
-        (fallback, 1)
+        Ok((fallback, 1))
     }
 
     fn get_line_end(&mut self) -> usize {
         let mut length = 1;
         while let Some((_, cur)) = self.input_iter.peek() {
-            if ";\n".contains(*cur) {
+            if *cur == b'\n' || *cur == b';' {
                 length += 1;
                 self.input_iter.next();
             } else {
@@ -84,6 +84,53 @@ impl<'ip> Lexer<'ip> {
 
         length
     }
+
+    fn get_char(&mut self) -> CompilerResult<'ip, (TokenKind, usize)> {
+        // get exactly 1 byte
+        let (pos, mut byte) = self.input_iter.next().ok_or(CompilerError::UnexpectedEof)?;
+        let mut size = 3;
+
+        // check for end of string, or escape characters
+        match byte {
+            b'\\' => {
+                size += 1;
+                // read n|\|'
+                let escape = self.input_iter.next().ok_or(CompilerError::UnexpectedEof)?;
+                byte = match escape.1 {
+                    b'n' => b'\n',
+                    b'\\' => b'\\',
+                    b'\'' => b'\'',
+                    x => {
+                        return Err(CompilerError::LexerError(
+                            format!("Invalid escape sequence '\\{}'", x as char),
+                            Span::new(escape.0, escape.0 + 1, self.input),
+                        ))
+                    }
+                };
+            }
+            b'\'' => {
+                // raise an error for empty character
+                return Err(CompilerError::LexerError(
+                    "char literal cannot be empty".into(),
+                    Span::new(pos, pos + 1, self.input),
+                ));
+            }
+            _ => {}
+        }
+
+        // step over the last '
+        match self.input_iter.next().ok_or(CompilerError::UnexpectedEof)? {
+            (_, b'\'') => {}
+            (pos, x) => {
+                return Err(CompilerError::LexerError(
+                    format!("expected \' found '{}'", x as char),
+                    Span::new(pos, pos + 1, self.input),
+                ))
+            }
+        }
+
+        Ok((TokenKind::Char(byte), size))
+    }
 }
 
 impl<'ip> Iterator for Lexer<'ip> {
@@ -92,15 +139,15 @@ impl<'ip> Iterator for Lexer<'ip> {
         let (start, cur) = self.input_iter.next()?;
 
         // handle // comments
-        if cur == '/' {
+        if cur == b'/' {
             if let Some((_, next_ch)) = self.input_iter.peek() {
-                if *next_ch == '/' {
+                if *next_ch == b'/' {
                     // consume the second '/'
                     self.input_iter.next();
 
                     // consume until end of line
                     while let Some((_, ch)) = self.input_iter.next() {
-                        if ch == '\n' {
+                        if ch == b'\n' {
                             break;
                         }
                     }
@@ -117,48 +164,53 @@ impl<'ip> Iterator for Lexer<'ip> {
             )));
         }
 
-        let (kind, len) = match cur {
-            ';' | '\n' => (TokenKind::LineEnd, self.get_line_end()),
-            '+' => (TokenKind::Plus, 1),
-            '*' => (TokenKind::Star, 1),
-            '/' => (TokenKind::Slash, 1),
-            '%' => (TokenKind::Mod, 1),
-            '@' => (TokenKind::Ref, 1),
-            '(' => (TokenKind::Lparen, 1),
-            ')' => (TokenKind::Rparen, 1),
-            '{' => (TokenKind::Lbrace, 1),
-            '}' => (TokenKind::Rbrace, 1),
-            ':' => (TokenKind::Colon, 1),
-            '^' => (TokenKind::Xor, 1),
-            '~' => (TokenKind::Bnot, 1),
-            ',' => (TokenKind::Comma, 1),
-            '-' => self.get_twochar_tok(&[('>', TokenKind::Arrow)], TokenKind::Minus),
-            '&' => self.get_twochar_tok(&[('&', TokenKind::And)], TokenKind::Band),
-            '|' => self.get_twochar_tok(&[('|', TokenKind::Or)], TokenKind::Bor),
-            '=' => self.get_twochar_tok(&[('=', TokenKind::Eq)], TokenKind::Assign),
-            '!' => self.get_twochar_tok(&[('=', TokenKind::Neq)], TokenKind::Not),
-            '<' => self.get_twochar_tok(
-                &[('=', TokenKind::Lte), ('<', TokenKind::Shl)],
+        let result = match cur {
+            b';' | b'\n' => Ok((TokenKind::LineEnd, self.get_line_end())),
+            b'\'' => self.get_char(),
+            b'+' => Ok((TokenKind::Plus, 1)),
+            b'*' => Ok((TokenKind::Star, 1)),
+            b'/' => Ok((TokenKind::Slash, 1)),
+            b'%' => Ok((TokenKind::Mod, 1)),
+            b'@' => Ok((TokenKind::Ref, 1)),
+            b'(' => Ok((TokenKind::Lparen, 1)),
+            b')' => Ok((TokenKind::Rparen, 1)),
+            b'{' => Ok((TokenKind::Lbrace, 1)),
+            b'}' => Ok((TokenKind::Rbrace, 1)),
+            b':' => Ok((TokenKind::Colon, 1)),
+            b'^' => Ok((TokenKind::Xor, 1)),
+            b'~' => Ok((TokenKind::Bnot, 1)),
+            b',' => Ok((TokenKind::Comma, 1)),
+            b'-' => self.get_twochar_tok(&[(b'>', TokenKind::Arrow)], TokenKind::Minus),
+            b'&' => self.get_twochar_tok(&[(b'&', TokenKind::And)], TokenKind::Band),
+            b'|' => self.get_twochar_tok(&[(b'|', TokenKind::Or)], TokenKind::Bor),
+            b'=' => self.get_twochar_tok(&[(b'=', TokenKind::Eq)], TokenKind::Assign),
+            b'!' => self.get_twochar_tok(&[(b'=', TokenKind::Neq)], TokenKind::Not),
+            b'<' => self.get_twochar_tok(
+                &[(b'=', TokenKind::Lte), (b'<', TokenKind::Shl)],
                 TokenKind::Lt,
             ),
-            '>' => self.get_twochar_tok(
-                &[('=', TokenKind::Gte), ('>', TokenKind::Shr)],
+            b'>' => self.get_twochar_tok(
+                &[(b'=', TokenKind::Gte), (b'>', TokenKind::Shr)],
                 TokenKind::Gt,
             ),
-            ws if ws.is_whitespace() => return self.next(),
+            ws if (ws as char).is_whitespace() => return self.next(),
             ch if ch.is_ascii_digit() => self.get_int(ch),
             ch if Self::is_ident(&ch, true) => self.get_ident(ch),
             unknown => {
                 return Some(Err(CompilerError::UnknownChar {
-                    ch: unknown,
+                    ch: unknown as char,
                     slice: Span::new(start, start + 1, self.input),
                 }))
             }
         };
 
-        Some(Ok(Token::new(
-            kind,
-            Span::new(start, start + len, self.input),
-        )))
+        if let Ok((kind, len)) = result {
+            return Some(Ok(Token::new(
+                kind,
+                Span::new(start, start + len, self.input),
+            )));
+        } else {
+            return Some(Err(result.err().unwrap()));
+        }
     }
 }

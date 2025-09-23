@@ -11,6 +11,7 @@ pub enum Keyword {
     Disp,
     Fn,
     Return,
+    As,
 }
 
 impl Keyword {
@@ -25,6 +26,7 @@ impl Keyword {
             "disp" => Some(Keyword::Disp),
             "fn" => Some(Keyword::Fn),
             "return" => Some(Keyword::Return),
+            "as" => Some(Keyword::As),
             _ => None,
         }
     }
@@ -37,6 +39,7 @@ pub enum TokenKind {
     Bool(bool),
     Keyword(Keyword),
     Identifier(String),
+    Char(u8),
     // String(String),
     Plus,
     Minus,
@@ -181,11 +184,11 @@ impl<'ip> fmt::Display for Span<'ip> {
 #[derive(Debug, Clone)]
 pub struct Token<'ip> {
     pub kind: TokenKind,
-    pub slice: Span<'ip>,
+    pub span: Span<'ip>,
 }
 
 impl<'ip> Token<'ip> {
     pub fn new(kind: TokenKind, slice: Span<'ip>) -> Self {
-        Self { kind, slice }
+        Self { kind, span: slice }
     }
 }

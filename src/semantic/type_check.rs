@@ -25,6 +25,7 @@ pub enum Type {
     Int,
     Bool,
     Unit,
+    Char,
     Ref(Box<Type>),
     Fn { params: Vec<Type>, ret: Box<Type> },
 }
@@ -35,6 +36,7 @@ impl Type {
             Type::Int => "int".to_string(),
             Type::Bool => "bool".to_string(),
             Type::Unit => "unit".to_string(),
+            Type::Char => "char".to_string(),
             Type::Ref(inner) => format!("ref {}", inner.to_string()),
             Type::Fn { params, ret } => format!(
                 "fn ({}) -> {}",
@@ -56,6 +58,7 @@ fn default_type_env() -> TypeEnv {
     env.insert("int".to_string(), Type::Int);
     env.insert("bool".to_string(), Type::Bool);
     env.insert("unit".to_string(), Type::Unit);
+    env.insert("char".to_string(), Type::Char);
     env
 }
 
@@ -176,6 +179,7 @@ impl<'ip> TypeChecker {
         match &ast.kind {
             AstKind::Int(_) => Ok(TypedAstNode::from_ast(ast, Type::Int, RetStatus::Never)),
             AstKind::Bool(_) => Ok(TypedAstNode::from_ast(ast, Type::Bool, RetStatus::Never)),
+            AstKind::Char(_) => Ok(TypedAstNode::from_ast(ast, Type::Char, RetStatus::Never)),
             AstKind::UnaryOp { op, operand } => self.check_unary(ast, op, operand),
             AstKind::BinaryOp { left, op, right } => self.check_binary(ast, left, op, right),
             AstKind::Identifier(_) => self.check_identifier(ast),
@@ -202,6 +206,7 @@ impl<'ip> TypeChecker {
             } => self.check_func(ast, name, params, body, ret),
             AstKind::Return(ret_opt) => self.check_return(ast, ret_opt),
             AstKind::FuncCall { name, args } => self.check_func_call(ast, name, args),
+            AstKind::As { lhs, rhs } => self.check_as(ast, lhs, rhs),
         }
     }
 
@@ -217,14 +222,14 @@ impl<'ip> TypeChecker {
             .collect::<Result<_, _>>()?;
 
         let func = self
-            .get_function(&name.slice.get_str())
-            .ok_or(CompilerError::UndefinedIdentifier(name.slice.clone()))?;
+            .get_function(&name.span.get_str())
+            .ok_or(CompilerError::UndefinedIdentifier(name.span.clone()))?;
 
         if args.len() != func.signature.params.len() {
             return Err(CompilerError::Semantic {
                 err: format!(
                     "function {} expects {} argument{}, but got {}",
-                    name.slice,
+                    name.span,
                     func.signature.params.len(),
                     if func.signature.params.len() == 1 {
                         ""
@@ -233,7 +238,7 @@ impl<'ip> TypeChecker {
                     },
                     args.len()
                 ),
-                span: name.slice.clone(),
+                span: name.span.clone(),
             });
         }
 
@@ -242,7 +247,7 @@ impl<'ip> TypeChecker {
                 return Err(CompilerError::UnexpectedType {
                     got: got.eval_ty.clone(),
                     expected: expected.to_string(),
-                    slice: name.slice.clone(),
+                    slice: name.span.clone(),
                 });
             }
         }
@@ -295,13 +300,13 @@ impl<'ip> TypeChecker {
 
         // declare function in the environment
         self.declare_function(
-            name.slice.get_str(),
+            name.span.get_str(),
             FnSignature {
                 params: param_types.clone(),
                 ret: ret_ty.clone(),
             },
         );
-        self.enter_function(name.slice.get_str())?;
+        self.enter_function(name.span.get_str())?;
 
         if ret_ty != Type::Unit {
             self.add_local_to_current("__return_addr", Type::Int)?;
@@ -309,7 +314,7 @@ impl<'ip> TypeChecker {
 
         // add parameters to local environment
         for ((pname, _), ty) in params.iter().zip(param_types) {
-            self.add_local_to_current(&pname.slice.get_str(), ty.clone())?;
+            self.add_local_to_current(&pname.span.get_str(), ty.clone())?;
         }
 
         self.add_local_to_current("__return_instr_addr", Type::Int)?;
@@ -609,7 +614,7 @@ impl<'ip> TypeChecker {
             rhs_typed.eval_ty
         };
 
-        self.add_local_to_current(name.slice.get_str(), final_ty.clone())?;
+        self.add_local_to_current(name.span.get_str(), final_ty.clone())?;
         Ok(TypedAstNode::from_ast(node, Type::Unit, rhs_typed.ret))
     }
 
@@ -653,10 +658,14 @@ impl<'ip> TypeChecker {
             (TokenKind::Neq, l, r) if l == r => Ok(Type::Bool),
 
             // comparison
-            (TokenKind::Gt, Type::Int, Type::Int)
-            | (TokenKind::Gte, Type::Int, Type::Int)
-            | (TokenKind::Lt, Type::Int, Type::Int)
-            | (TokenKind::Lte, Type::Int, Type::Int) => Ok(Type::Bool),
+            (TokenKind::Gt, a, b)
+            | (TokenKind::Gte, a, b)
+            | (TokenKind::Lt, a, b)
+            | (TokenKind::Lte, a, b)
+                if a == b && matches!(a, Type::Int | Type::Char) =>
+            {
+                Ok(Type::Bool)
+            }
 
             // logical
             (TokenKind::And, Type::Bool, Type::Bool) | (TokenKind::Or, Type::Bool, Type::Bool) => {
@@ -743,6 +752,40 @@ impl<'ip> TypeChecker {
             Type::Unit, // a block of items evaluates to unit
             last_ret,   // return status propagated from last item
         ))
+    }
+
+    fn check_as(
+        &mut self,
+        ast: &'ip AstNode<'ip>,
+        lhs: &'ip AstNode<'ip>,
+        rhs: &'ip Token<'ip>,
+    ) -> CompilerResult<'ip, TypedAstNode<'ip>> {
+        // Evalute lhs
+        let lhs_ty = self.infer_type(lhs)?;
+
+        // Assert rhs
+        let rhs_ty = self
+            .type_env
+            .get(rhs.span.get_str())
+            .ok_or(CompilerError::TypeError(
+                format!("unknown type {}", rhs.span.get_str()),
+                rhs.span.clone(),
+            ))?;
+
+        // match types
+        let eval = match (&lhs_ty.eval_ty, rhs_ty) {
+            (Type::Int, ty @ Type::Char)
+            | (Type::Bool, ty @ Type::Int)
+            | (Type::Char, ty @ Type::Int) => ty.clone(),
+            (a, b) => {
+                return Err(CompilerError::TypeError(
+                    format!("cannot cast {} as {}", a.to_string(), b.to_string()),
+                    ast.get_slice(),
+                ))
+            }
+        };
+
+        Ok(TypedAstNode::from_ast(ast, eval, lhs_ty.ret))
     }
 }
 

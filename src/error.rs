@@ -11,6 +11,7 @@ pub enum CompilerError<'ip> {
         ch: char,
         slice: Span<'ip>,
     },
+    LexerError(String, Span<'ip>),
     UnexpectedToken {
         got: Token<'ip>,
         expected: &'static str,
@@ -49,7 +50,7 @@ impl<'ip> Display for CompilerError<'ip> {
                 write!(
                     f,
                     "ParserError at {}: expected '{}' but found token '{:?}'",
-                    got.slice.get_row_col(),
+                    got.span.get_row_col(),
                     expected,
                     got.kind
                 )
@@ -78,8 +79,8 @@ impl<'ip> Display for CompilerError<'ip> {
                     write!(
                         f,
                         "TypeError at {}: cannot apply operator '{}' between '{}' and '{}'",
-                        op.slice.get_row_col(),
-                        op.slice.get_str(),
+                        op.span.get_row_col(),
+                        op.span.get_str(),
                         lhs.to_string(),
                         rhs.to_string(),
                     )
@@ -87,8 +88,8 @@ impl<'ip> Display for CompilerError<'ip> {
                     write!(
                         f,
                         "TypeError at {}: cannot apply operator '{}' to '{}'",
-                        op.slice.get_row_col(),
-                        op.slice.get_str(),
+                        op.span.get_row_col(),
+                        op.span.get_str(),
                         rhs.to_string(),
                     )
                 }
@@ -103,6 +104,9 @@ impl<'ip> Display for CompilerError<'ip> {
             }
             Self::Semantic { err, span: slice } => {
                 write!(f, "Semantic Error at {}: {}", slice.get_row_col(), err)
+            }
+            Self::LexerError(err, span) => {
+                write!(f, "LexerError at {}: {}", span.get_row_col(), err)
             }
         }
     }

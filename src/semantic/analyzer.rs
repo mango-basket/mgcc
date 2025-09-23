@@ -118,7 +118,10 @@ impl<'a> SemanticChecker<'a> {
             },
             TypedAstKind::Deref(_) => Ok(()),
             TypedAstKind::Disp(_) => Ok(()),
-            TypedAstKind::Int(_) | TypedAstKind::Bool(_) | TypedAstKind::Identifier(_) => Ok(()),
+            TypedAstKind::Int(_)
+            | TypedAstKind::Bool(_)
+            | TypedAstKind::Char(_)
+            | TypedAstKind::Identifier(_) => Ok(()),
             TypedAstKind::Func {
                 name: _,
                 params: _,
@@ -130,6 +133,7 @@ impl<'a> SemanticChecker<'a> {
             }
             TypedAstKind::Return(_ast) => Ok(()),
             TypedAstKind::FuncCall { .. } => Ok(()),
+            TypedAstKind::As { .. } => Ok(()),
         }
     }
 }

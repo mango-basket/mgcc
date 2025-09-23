@@ -81,7 +81,7 @@ impl<'ip> Parser<'ip> {
 
     pub fn start_slice(&mut self) -> CompilerResult<'ip, ()> {
         if let Some(Ok(tok)) = self.peek().cloned() {
-            self.slice_stack.push(tok.slice.start);
+            self.slice_stack.push(tok.span.start);
         }
 
         Ok(())
@@ -96,12 +96,12 @@ impl<'ip> Parser<'ip> {
     pub fn next(&mut self) -> Option<CompilerResult<'ip, Token<'ip>>> {
         if let Some(tok) = self.buffer.pop_front() {
             if let Ok(tok) = &tok {
-                self.pos = tok.slice.end as isize;
+                self.pos = tok.span.end as isize;
             }
             Some(tok)
         } else if let Some(tok) = self.lexer.next() {
             if let Ok(tok) = &tok {
-                self.pos = tok.slice.end as isize;
+                self.pos = tok.span.end as isize;
             }
             Some(tok)
         } else {
@@ -420,7 +420,7 @@ impl<'ip> Parser<'ip> {
             index: usize,
         ) -> CompilerResult<'ip, AstNode<'ip>> {
             if index >= table.len() {
-                return parser.parse_unary(); // bottom-most fallback
+                return parser.parse_as(); // bottom-most fallback
             }
 
             parser.parse_binary_op(table[index], |p| parse_level(p, table, index + 1))
@@ -449,6 +449,26 @@ impl<'ip> Parser<'ip> {
                 op: tok,
                 right: Box::new(sub),
             });
+        }
+
+        Ok(node)
+    }
+
+    fn parse_as(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        // unary ("as" ident)+
+        self.start_slice()?;
+
+        let mut node = self.parse_unary()?;
+
+        while let Some(Ok(_)) =
+            self.next_if(|tok| matches!(tok.kind, TokenKind::Keyword(Keyword::As)))
+        {
+            // get an identifier
+            let ty = expect_match!(self, TokenKind::Identifier(_))?;
+            node = self.gen_node(AstKind::As {
+                lhs: Box::new(node),
+                rhs: ty,
+            })
         }
 
         Ok(node)
@@ -501,6 +521,7 @@ impl<'ip> Parser<'ip> {
         match token.kind {
             TokenKind::Int(_) => Ok(self.gen_node(AstKind::Int(token.kind))),
             TokenKind::Bool(_) => Ok(self.gen_node(AstKind::Bool(token.kind))),
+            TokenKind::Char(_) => Ok(self.gen_node(AstKind::Char(token.kind))),
             TokenKind::Identifier(_) => self.parse_func_call(&token),
 
             TokenKind::Lparen => {
