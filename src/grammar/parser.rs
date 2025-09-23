@@ -278,13 +278,19 @@ impl<'ip> Parser<'ip> {
         if let Some(Ok(tok)) = self.peek() {
             match &tok.kind {
                 TokenKind::Ref => {
-                    let _ = self.next();
+                    self.bump()?;
                     let inner = self.parse_type()?;
                     Ok(self.gen_node(AstKind::Ref(Box::new(inner))))
                 }
                 TokenKind::Identifier(_) => {
                     let ident = expect_match!(self, TokenKind::Identifier(_))?;
                     Ok(self.gen_node(AstKind::Identifier(ident.kind.clone())))
+                }
+                TokenKind::Lsquare => {
+                    self.bump()?;
+                    let inner = self.parse_type()?;
+                    expect_match!(self, TokenKind::Rsquare)?;
+                    Ok(self.gen_node(AstKind::Array(vec![inner])))
                 }
                 _ => Err(CompilerError::UnexpectedToken {
                     got: tok.clone(),
