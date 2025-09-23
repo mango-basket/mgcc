@@ -109,6 +109,10 @@ impl<'ip> Parser<'ip> {
         }
     }
 
+    pub fn expected_next(&mut self) -> CompilerResult<'ip, Token<'ip>> {
+        self.next().ok_or(CompilerError::UnexpectedEof)?
+    }
+
     pub fn next_if<F>(&mut self, f: F) -> Option<CompilerResult<'ip, Token<'ip>>>
     where
         F: Fn(&Token<'ip>) -> bool,
@@ -121,6 +125,10 @@ impl<'ip> Parser<'ip> {
 
     pub fn peek(&mut self) -> Option<&CompilerResult<'ip, Token<'ip>>> {
         self.peek_n(0)
+    }
+
+    pub fn expected_peek(&mut self) -> CompilerResult<'ip, Token<'ip>> {
+        self.peek().ok_or(CompilerError::UnexpectedEof).cloned()?
     }
 
     fn consume_line_end(&mut self) -> CompilerResult<'ip, ()> {
@@ -291,6 +299,7 @@ impl<'ip> Parser<'ip> {
     fn parse_vardef(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
         self.start_slice()?;
         self.bump()?; // consume var keyword
+
         let name = expect_match!(self, TokenKind::Identifier(_))?;
 
         // look ahead for optional colon
@@ -302,9 +311,27 @@ impl<'ip> Parser<'ip> {
                 vartype = Some(Box::new(t))
             }
         }
-        expect_match!(self, TokenKind::Assign)?;
 
-        let rhs = self.parse_expression()?;
+        // arraydef syntax or normal assign
+        let rhs = match expect_match!(
+            self,
+            TokenKind::Assign | TokenKind::Lsquare,
+            "variable assignment"
+        )?
+        .kind
+        {
+            TokenKind::Assign => {
+                let rhs = self.parse_expression()?;
+                rhs
+            }
+            TokenKind::Lsquare => {
+                self.start_slice()?;
+                let size = expect_match!(self, TokenKind::Int(_))?;
+                expect_match!(self, TokenKind::Rsquare)?;
+                self.gen_node(AstKind::ArrayDef(size))
+            }
+            _ => unreachable!(),
+        };
         self.consume_line_end()?;
 
         Ok(self.gen_node(AstKind::VarDef {
@@ -524,6 +551,9 @@ impl<'ip> Parser<'ip> {
             TokenKind::Char(_) => Ok(self.gen_node(AstKind::Char(token.kind))),
             TokenKind::Identifier(_) => self.parse_func_call(&token),
 
+            // Arrays
+            TokenKind::Lsquare => self.parse_array(),
+
             TokenKind::Lparen => {
                 let expr = self.parse_expression()?;
 
@@ -634,5 +664,33 @@ impl<'ip> Parser<'ip> {
         let body = self.parse_statements()?;
         expect_match!(self, TokenKind::Rbrace)?;
         Ok(self.gen_node(AstKind::Loop(Box::new(body))))
+    }
+
+    fn parse_array(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        // slice started in atom
+        // [ already consumed
+        let mut elems = Vec::new();
+        if !matches!(self.peek_kind(), Some(TokenKind::Rsquare)) {
+            loop {
+                let expr = self.parse_expression()?;
+                elems.push(expr);
+
+                match self.peek_kind() {
+                    Some(TokenKind::Comma) => {
+                        self.bump()?; // consume comma
+
+                        // if next is ')', that's trailing comma  break
+                        if matches!(self.peek_kind(), Some(TokenKind::Rparen)) {
+                            break;
+                        }
+                    }
+                    _ => break,
+                }
+            }
+        }
+
+        expect_match!(self, TokenKind::Rsquare)?;
+
+        Ok(self.gen_node(AstKind::Array(elems)))
     }
 }

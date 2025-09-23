@@ -242,7 +242,7 @@ pub enum GenericAstKind<'ip, Child> {
         rhs: Box<Child>,
     },
     Array(Vec<Child>),
-    ArrayDef(TokenKind), // var a[4];
+    ArrayDef(Token<'ip>), // var a[4];
 }
 
 impl<'ip, Child> GenericAstKind<'ip, Child> {
