@@ -17,10 +17,93 @@ fn reg(num: u8) -> String {
     }
 }
 
+fn jmp_lbl_optimization(instrs: Vec<Instr>) -> Vec<Instr> {
+    use std::collections::HashMap;
+
+    let mut out = Vec::new();
+    let mut label_aliases: HashMap<String, String> = HashMap::new();
+
+    // pass 1: eliminate useless jumps, detect label merges
+    let mut i = 0;
+    while i < instrs.len() {
+        match &instrs[i] {
+            // case: JMP lbl immediately followed by lbl
+            Instr::JmpLbl(jlbl) => {
+                if i + 1 < instrs.len() {
+                    if let Instr::Lbl(lbl) = &instrs[i + 1] {
+                        if jlbl == lbl {
+                            // useless jump, skip it
+                            i += 1; // skip JMP
+                            continue;
+                        }
+                    }
+                }
+                out.push(instrs[i].clone());
+            }
+
+            // case: duplicate labels — record alias
+            Instr::Lbl(name) => {
+                if let Some(Instr::Lbl(prev)) = out.last() {
+                    // last instr was also a label at same spot
+                    label_aliases.insert(name.clone(), prev.clone());
+                    // don’t emit duplicate label
+                } else {
+                    out.push(instrs[i].clone());
+                }
+            }
+
+            other => out.push(other.clone()),
+        }
+        i += 1;
+    }
+
+    // pass 2: rewrite jumps to use canonical labels
+    let mut final_out = Vec::new();
+    for instr in out {
+        match instr {
+            Instr::JmpLbl(id) => {
+                let target = resolve_alias(&id, &label_aliases);
+                final_out.push(Instr::JmpLbl(target));
+            }
+            Instr::JltLbl(id) => {
+                let target = resolve_alias(&id, &label_aliases);
+                final_out.push(Instr::JltLbl(target));
+            }
+            Instr::JgtLbl(id) => {
+                let target = resolve_alias(&id, &label_aliases);
+                final_out.push(Instr::JgtLbl(target));
+            }
+            Instr::JeqLbl(id) => {
+                let target = resolve_alias(&id, &label_aliases);
+                final_out.push(Instr::JeqLbl(target));
+            }
+            Instr::CallLbl(id) => {
+                let target = resolve_alias(&id, &label_aliases);
+                final_out.push(Instr::CallLbl(target));
+            }
+            Instr::Lbl(id) => {
+                let target = resolve_alias(&id, &label_aliases);
+                final_out.push(Instr::Lbl(target));
+            }
+            other => final_out.push(other),
+        }
+    }
+
+    final_out
+}
+
+fn resolve_alias(name: &str, aliases: &HashMap<String, String>) -> String {
+    let mut cur = name;
+    while let Some(next) = aliases.get(cur) {
+        cur = next;
+    }
+    cur.to_string()
+}
+
 pub fn gen_asm(instrs: Vec<Instr>) -> String {
     let mut prologue = vec![Instr::CallLbl("main".to_string()), Instr::Halt];
     prologue.extend(instrs.clone());
-    let instrs = prologue;
+    let instrs = jmp_lbl_optimization(prologue);
     let mut code = String::new();
 
     for instr in instrs {

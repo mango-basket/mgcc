@@ -334,7 +334,11 @@ impl<'ip> Compiler {
                         Instr::Sub,
                     ]);
                     instrs.extend(self.gen_instrs(rhs)?);
-                    instrs.push(Instr::Storep);
+                    if rhs.eval_ty.get_size() == 1 {
+                        instrs.push(Instr::Storepb);
+                    } else {
+                        instrs.push(Instr::Storep);
+                    }
                 }
                 _ => {}
             },
@@ -588,7 +592,7 @@ impl<'ip> Compiler {
 
                 // if the array is padded, ie, item size is 1, increment pointer
                 // for efficient packing
-                if ast.eval_ty.is_padded() {
+                if ast.eval_ty.get_size() == 1 {
                     instrs.extend([Instr::Push(1), Instr::Add]);
                 }
 
@@ -610,7 +614,7 @@ impl<'ip> Compiler {
                     }
                 }
             }
-            TypedAstKind::ArrayDef { .. } => {
+            TypedAstKind::ArrayDef { ty, .. } => {
                 // Allocate space and push pointer to beginning of array
                 instrs.extend([
                     Instr::Pushr(SP),
@@ -621,6 +625,12 @@ impl<'ip> Compiler {
                     Instr::Push(ast.eval_ty.get_padded_size() as u16),
                     Instr::Add,
                 ]);
+
+                // if the array is padded, ie, item size is 1, increment pointer
+                // for efficient packing
+                if ty.get_size() == 1 {
+                    instrs.extend([Instr::Push(1), Instr::Add]);
+                }
             }
         }
 

@@ -20,15 +20,39 @@ pub struct FnSignature {
 }
 
 #[allow(unused)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Type {
     Int,
     Bool,
     Unit,
     Char,
     Ref(Box<Type>),
-    Array(Box<Type>, usize),
+    Array(Box<Type>, Option<usize>),
     Fn { params: Vec<Type>, ret: Box<Type> },
+}
+
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Type::Int, Type::Int) => true,
+            (Type::Bool, Type::Bool) => true,
+            (Type::Unit, Type::Unit) => true,
+            (Type::Char, Type::Char) => true,
+            (Type::Ref(inner1), Type::Ref(inner2)) => inner1 == inner2,
+            (
+                Type::Fn {
+                    params: p1,
+                    ret: r1,
+                },
+                Type::Fn {
+                    params: p2,
+                    ret: r2,
+                },
+            ) => p1 == p2 && r1 == r2,
+            (Type::Array(inner1, _), Type::Array(inner2, _)) => inner1 == inner2,
+            _ => false,
+        }
+    }
 }
 
 impl Type {
@@ -47,7 +71,7 @@ impl Type {
                     .collect::<String>(),
                 ret.to_string()
             ),
-            Type::Array(inner, size) => format!("{}[{}]", inner.to_string(), size),
+            Type::Array(inner, size) => format!("{}[{:?}]", inner.to_string(), size),
         }
     }
 
@@ -58,7 +82,7 @@ impl Type {
             Type::Unit => 0,
             Type::Char => 1,
             Type::Ref(_) => 2,
-            Type::Array(inner, size) => inner.get_size() * size,
+            Type::Array(inner, size) => inner.get_size() * size.unwrap_or(0),
 
             // Reference
             Type::Fn { .. } => 2,
@@ -902,8 +926,10 @@ impl<'ip> TypeChecker {
             }
             AstKind::ArrayDef { size, ty } => {
                 let inner_ty = self.ast_to_type(&ty)?;
-                if let TokenKind::Int(num) = size.kind {
-                    Ok(Type::Array(Box::new(inner_ty), num as usize))
+                if size.is_none() {
+                    Ok(Type::Array(Box::new(inner_ty), None))
+                } else if let TokenKind::Int(num) = size.clone().unwrap().kind {
+                    Ok(Type::Array(Box::new(inner_ty), Some(num as usize)))
                 } else {
                     unreachable!()
                 }
@@ -1051,7 +1077,7 @@ impl<'ip> TypeChecker {
         Ok(TypedAstNode::new(
             TypedAstKind::Array(typed_items),
             ast.get_span(),
-            Type::Array(Box::new(eval_ty), items.len()),
+            Type::Array(Box::new(eval_ty), Some(items.len())),
             ret,
         ))
     }
@@ -1059,9 +1085,12 @@ impl<'ip> TypeChecker {
     fn check_array_def(
         &self,
         ast: &'ip AstNode<'ip>,
-        size: &'ip Token<'ip>,
+        size: &'ip Option<Token<'ip>>,
         ty: &'ip AstNode<'ip>,
     ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        // guaranteed to have a size because we only reach here through vardef
+        let size = size.clone().unwrap();
+
         if let TokenKind::Int(num) = size.kind {
             let elem_ty = self.ast_to_type(ty)?;
 
@@ -1071,7 +1100,7 @@ impl<'ip> TypeChecker {
                     size: size.clone(),
                 },
                 ast.get_span(),
-                Type::Array(Box::new(elem_ty), num as usize),
+                Type::Array(Box::new(elem_ty), Some(num as usize)),
                 RetStatus::Never,
             ))
         } else {

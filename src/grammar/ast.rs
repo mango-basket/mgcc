@@ -317,7 +317,7 @@ pub enum AstKind<'ip> {
     },
     Array(Vec<AstNode<'ip>>),
     ArrayDef {
-        size: Token<'ip>,
+        size: Option<Token<'ip>>,
         ty: Box<AstNode<'ip>>,
     }, // var a[4];
 }

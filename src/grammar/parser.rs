@@ -288,8 +288,15 @@ impl<'ip> Parser<'ip> {
                 }
                 TokenKind::Lsquare => {
                     self.bump()?;
-                    let size = expect_match!(self, TokenKind::Int(_))?;
-                    expect_match!(self, TokenKind::Colon)?;
+
+                    let size = if matches!(self.expected_peek()?.kind, TokenKind::Int(_)) {
+                        let size = expect_match!(self, TokenKind::Int(_))?;
+                        expect_match!(self, TokenKind::Colon)?;
+                        Some(size)
+                    } else {
+                        None
+                    };
+
                     let inner = self.parse_type()?;
                     expect_match!(self, TokenKind::Rsquare)?;
                     Ok(self.gen_node(AstKind::ArrayDef {
@@ -342,7 +349,7 @@ impl<'ip> Parser<'ip> {
                 let ty = self.parse_type()?;
                 expect_match!(self, TokenKind::Rsquare)?;
                 self.gen_node(AstKind::ArrayDef {
-                    size,
+                    size: Some(size),
                     ty: Box::new(ty),
                 })
             }
