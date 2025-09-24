@@ -131,6 +131,53 @@ impl<'ip> Lexer<'ip> {
 
         Ok((TokenKind::Char(byte), size))
     }
+
+    fn get_string(&mut self) -> CompilerResult<'ip, (TokenKind, usize)> {
+        let start = self.input_iter.peek().map(|(i, _)| *i).unwrap_or(0);
+        let mut buf = Vec::new();
+        let mut size = 1; // already consumed the opening "
+
+        while let Some((pos, byte)) = self.input_iter.next() {
+            size += 1;
+            match byte {
+                b'"' => {
+                    // end of string
+                    return Ok((TokenKind::String(buf), size));
+                }
+                b'\\' => {
+                    // escape sequence
+                    let (e_pos, esc) =
+                        self.input_iter.next().ok_or(CompilerError::UnexpectedEof)?;
+                    size += 1;
+                    let resolved = match esc {
+                        b'n' => b'\n',
+                        b'\\' => b'\\',
+                        b'"' => b'"',
+                        x => {
+                            return Err(CompilerError::LexerError(
+                                format!("invalid escape sequence '\\{}'", x as char),
+                                Span::new(e_pos, e_pos + 1, self.input),
+                            ))
+                        }
+                    };
+                    buf.push(resolved);
+                }
+                b'\n' => {
+                    // error on raw newline
+                    return Err(CompilerError::LexerError(
+                        "string literal cannot contain unescaped newline".into(),
+                        Span::new(pos, pos + 1, self.input),
+                    ));
+                }
+                x => buf.push(x),
+            }
+        }
+
+        Err(CompilerError::LexerError(
+            "unterminated string literal".into(),
+            Span::new(start, start + size, self.input),
+        ))
+    }
 }
 
 impl<'ip> Iterator for Lexer<'ip> {
@@ -167,6 +214,7 @@ impl<'ip> Iterator for Lexer<'ip> {
         let result = match cur {
             b';' | b'\n' => Ok((TokenKind::LineEnd, self.get_line_end())),
             b'\'' => self.get_char(),
+            b'"' => self.get_string(),
             b'+' => Ok((TokenKind::Plus, 1)),
             b'*' => Ok((TokenKind::Star, 1)),
             b'/' => Ok((TokenKind::Slash, 1)),

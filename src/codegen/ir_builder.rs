@@ -244,6 +244,38 @@ impl<'ip> Compiler {
                     unreachable!()
                 }
             }
+            TypedAstKind::String(kind) => {
+                if let TokenKind::String(chars) = kind {
+                    instrs.extend([
+                        Instr::Pushr(SP),
+                        Instr::Push(ast.eval_ty.get_padded_size() as u16),
+                        Instr::Sub,
+                        Instr::Popr(SP),
+                    ]);
+
+                    // Put pointer to bottom of array on top of the stack
+                    instrs.extend([
+                        Instr::Pushr(SP),
+                        Instr::Push(ast.eval_ty.get_padded_size() as u16),
+                        Instr::Add,
+                        Instr::Push(1), // increment pointer for better packing
+                        Instr::Add,
+                    ]);
+
+                    for (idx, char) in chars.iter().enumerate() {
+                        instrs.extend([
+                            // Duplicate the top of the stack
+                            Instr::Loadr(SP, 2),
+                            Instr::Push(idx as u16),
+                            Instr::Sub,
+                            Instr::Push(*char as u16),
+                            Instr::Storepb,
+                        ]);
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
             TypedAstKind::Char(kind) => {
                 if let TokenKind::Char(ch) = kind {
                     instrs.push(Instr::Push(*ch as u16))

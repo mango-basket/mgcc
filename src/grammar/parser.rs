@@ -591,6 +591,7 @@ impl<'ip> Parser<'ip> {
             TokenKind::Int(_) => Ok(self.gen_node(AstKind::Int(token.kind))),
             TokenKind::Bool(_) => Ok(self.gen_node(AstKind::Bool(token.kind))),
             TokenKind::Char(_) => Ok(self.gen_node(AstKind::Char(token.kind))),
+            TokenKind::String(_) => Ok(self.gen_node(AstKind::String(token.kind))),
             TokenKind::Identifier(_) => self.parse_func_call(&token),
 
             // Arrays

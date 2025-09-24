@@ -39,6 +39,7 @@ pub enum TokenKind {
     Keyword(Keyword),
     Identifier(String),
     Char(u8),
+    String(Vec<u8>),
     Plus,
     Minus,
     Star,

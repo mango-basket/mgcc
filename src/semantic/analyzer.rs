@@ -123,6 +123,7 @@ impl<'a> SemanticChecker<'a> {
             TypedAstKind::Int(_)
             | TypedAstKind::Bool(_)
             | TypedAstKind::Char(_)
+            | TypedAstKind::String(_)
             | TypedAstKind::Identifier(_) => Ok(()),
             TypedAstKind::Func { body, .. } => {
                 // check function body recursively

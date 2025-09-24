@@ -83,8 +83,6 @@ impl Type {
             Type::Char => 1,
             Type::Ref(_) => 2,
             Type::Array(inner, size) => inner.get_size() * size.unwrap_or(0),
-
-            // Reference
             Type::Fn { .. } => 2,
         }
     }
@@ -232,6 +230,15 @@ impl<'ip> TypeChecker {
                 TypedAstKind::Int(tok.clone()),
                 ast.get_span(),
                 Type::Int,
+                RetStatus::Never,
+            )),
+            AstKind::String(tok) => Ok(TypedAstNode::new(
+                TypedAstKind::String(tok.clone()),
+                ast.get_span(),
+                Type::Array(
+                    Box::new(Type::Char),
+                    Some(ast.span.get_str().len() - 1), // -2 quotes + 1 \0
+                ),
                 RetStatus::Never,
             )),
             AstKind::Bool(tok) => Ok(TypedAstNode::new(

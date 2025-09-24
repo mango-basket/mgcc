@@ -68,7 +68,8 @@ pub enum TypedAstKind<'ip> {
     ArrayDef {
         size: Token<'ip>,
         ty: Type,
-    }, // var a[4];
+    },
+    String(TokenKind), // var a[4];
 }
 
 #[derive(Debug, Clone)]
@@ -319,7 +320,8 @@ pub enum AstKind<'ip> {
     ArrayDef {
         size: Option<Token<'ip>>,
         ty: Box<AstNode<'ip>>,
-    }, // var a[4];
+    },
+    String(TokenKind),
 }
 
 impl<'ip> TypedAstKind<'ip> {
@@ -327,7 +329,7 @@ impl<'ip> TypedAstKind<'ip> {
         use TypedAstKind::*;
 
         match self {
-            Identifier(_) | Int(_) | Bool(_) | Char(_) | Array(_) => true,
+            Identifier(_) | Int(_) | Bool(_) | Char(_) | Array(_) | String(_) => true,
             Ref(_) => false,
             Deref(_) => false,
             UnaryOp { .. } => false,
@@ -494,6 +496,9 @@ impl<'ip> AstNode<'ip> {
             }
             AstKind::ArrayDef { .. } => {
                 format!("{}ArrayDef({})", pad, self.span.get_str())
+            }
+            AstKind::String(_) => {
+                format!("{}String({})", pad, self.span.get_str())
             }
         }
     }
