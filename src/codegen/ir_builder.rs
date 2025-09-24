@@ -588,7 +588,7 @@ impl<'ip> Compiler {
                         Instr::Sub,
                     ]);
                     instrs.extend(self.gen_instrs(item)?);
-                    instrs.push(Instr::Storep);
+                    instrs.push(Instr::Storepb);
                 }
             }
             TypedAstKind::ArrayDef { .. } => {
