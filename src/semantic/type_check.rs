@@ -68,6 +68,10 @@ impl Type {
     pub fn get_padded_size(&self) -> usize {
         self.get_size() + (self.get_size() % 2)
     }
+
+    pub fn is_padded(&self) -> bool {
+        self.get_size() % 2 != 0
+    }
 }
 
 pub type TypeEnv = HashMap<String, Type>;

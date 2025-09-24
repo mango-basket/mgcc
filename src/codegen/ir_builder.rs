@@ -564,31 +564,50 @@ impl<'ip> Compiler {
                 instrs.extend([Instr::Push(ast.eval_ty.get_size() as u16), Instr::Mul]);
 
                 // add them and access memory at the address
-                instrs.extend([Instr::Sub, Instr::Loadp]);
+                if ast.eval_ty.get_size() == 1 {
+                    instrs.extend([Instr::Sub, Instr::Loadpb]);
+                } else {
+                    instrs.extend([Instr::Sub, Instr::Loadp]);
+                }
             }
             TypedAstKind::Array(items) => {
+                // Allocate the array
                 instrs.extend([
                     Instr::Pushr(SP),
                     Instr::Push(ast.eval_ty.get_padded_size() as u16),
                     Instr::Sub,
                     Instr::Popr(SP),
+                ]);
+
+                // Put pointer to bottom of array on top of the stack
+                instrs.extend([
                     Instr::Pushr(SP),
                     Instr::Push(ast.eval_ty.get_padded_size() as u16),
                     Instr::Add,
                 ]);
 
+                // if the array is padded, ie, item size is 1, increment pointer
+                // for efficient packing
+                if ast.eval_ty.is_padded() {
+                    instrs.extend([Instr::Push(1), Instr::Add]);
+                }
+
                 for (idx, item) in items.iter().enumerate() {
                     instrs.extend([
-                        Instr::Pushr(SP),
-                        Instr::Push(ast.eval_ty.get_padded_size() as u16 + 2),
-                        Instr::Add,
+                        // Duplicate the top of the stack
+                        Instr::Loadr(SP, 2),
                         Instr::Push(idx as u16),
                         Instr::Push(item.eval_ty.get_size() as u16),
                         Instr::Mul,
                         Instr::Sub,
                     ]);
                     instrs.extend(self.gen_instrs(item)?);
-                    instrs.push(Instr::Storepb);
+
+                    if item.eval_ty.get_size() == 1 {
+                        instrs.push(Instr::Storepb);
+                    } else {
+                        instrs.push(Instr::Storep);
+                    }
                 }
             }
             TypedAstKind::ArrayDef { .. } => {
