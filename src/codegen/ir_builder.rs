@@ -24,6 +24,8 @@ pub struct FunctionContext {
 
 pub struct Compiler {
     pub functions: HashMap<String, FunctionContext>,
+    pub data_strings: HashMap<String, String>,
+    pub data_counter: usize,
     pub label_counter: usize,
     pub loop_stack: Vec<(String, String)>, // (loop head, loop end)
     pub cur_func: Option<String>,
@@ -245,33 +247,12 @@ impl<'ip> Compiler {
                 }
             }
             TypedAstKind::String(kind) => {
-                if let TokenKind::String(chars) = kind {
-                    instrs.extend([
-                        Instr::Pushr(SP),
-                        Instr::Push(ast.eval_ty.get_padded_size() as u16),
-                        Instr::Sub,
-                        Instr::Popr(SP),
-                    ]);
-
-                    // Put pointer to bottom of array on top of the stack
-                    instrs.extend([
-                        Instr::Pushr(SP),
-                        Instr::Push(ast.eval_ty.get_padded_size() as u16),
-                        Instr::Add,
-                        Instr::Push(1), // increment pointer for better packing
-                        Instr::Add,
-                    ]);
-
-                    for (idx, char) in chars.iter().enumerate() {
-                        instrs.extend([
-                            // Duplicate the top of the stack
-                            Instr::Loadr(SP, 2),
-                            Instr::Push(idx as u16),
-                            Instr::Sub,
-                            Instr::Push(*char as u16),
-                            Instr::Storepb,
-                        ]);
-                    }
+                if let TokenKind::String(_) = kind {
+                    let name = format!("__str_{}", self.data_counter);
+                    self.data_strings
+                        .insert(name.clone(), ast.get_span().get_str().to_string());
+                    instrs.push(Instr::Data(name));
+                    self.data_counter += 1;
                 } else {
                     unreachable!()
                 }
@@ -601,9 +582,9 @@ impl<'ip> Compiler {
 
                 // add them and access memory at the address
                 if ast.eval_ty.get_size() == 1 {
-                    instrs.extend([Instr::Sub, Instr::Loadpb]);
+                    instrs.extend([Instr::Add, Instr::Loadpb]);
                 } else {
-                    instrs.extend([Instr::Sub, Instr::Loadp]);
+                    instrs.extend([Instr::Add, Instr::Loadp]);
                 }
             }
             TypedAstKind::Array(items) => {
@@ -615,18 +596,8 @@ impl<'ip> Compiler {
                     Instr::Popr(SP),
                 ]);
 
-                // Put pointer to bottom of array on top of the stack
-                instrs.extend([
-                    Instr::Pushr(SP),
-                    Instr::Push(ast.eval_ty.get_padded_size() as u16),
-                    Instr::Add,
-                ]);
-
-                // if the array is padded, ie, item size is 1, increment pointer
-                // for efficient packing
-                if ast.eval_ty.get_size() == 1 {
-                    instrs.extend([Instr::Push(1), Instr::Add]);
-                }
+                // Put pointer to beginning of array on top of the stack
+                instrs.extend([Instr::Pushr(SP), Instr::Push(2), Instr::Add]);
 
                 for (idx, item) in items.iter().enumerate() {
                     instrs.extend([
@@ -635,7 +606,7 @@ impl<'ip> Compiler {
                         Instr::Push(idx as u16),
                         Instr::Push(item.eval_ty.get_size() as u16),
                         Instr::Mul,
-                        Instr::Sub,
+                        Instr::Add,
                     ]);
                     instrs.extend(self.gen_instrs(item)?);
 
@@ -646,7 +617,7 @@ impl<'ip> Compiler {
                     }
                 }
             }
-            TypedAstKind::ArrayDef { ty, .. } => {
+            TypedAstKind::ArrayDef { .. } => {
                 // Allocate space and push pointer to beginning of array
                 instrs.extend([
                     Instr::Pushr(SP),
@@ -654,15 +625,9 @@ impl<'ip> Compiler {
                     Instr::Sub,
                     Instr::Popr(SP),
                     Instr::Pushr(SP),
-                    Instr::Push(ast.eval_ty.get_padded_size() as u16),
+                    Instr::Push(2),
                     Instr::Add,
                 ]);
-
-                // if the array is padded, ie, item size is 1, increment pointer
-                // for efficient packing
-                if ty.get_size() == 1 {
-                    instrs.extend([Instr::Push(1), Instr::Add]);
-                }
             }
         }
 

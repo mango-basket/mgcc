@@ -100,13 +100,19 @@ fn resolve_alias(name: &str, aliases: &HashMap<String, String>) -> String {
     cur.to_string()
 }
 
-pub fn gen_asm(instrs: Vec<Instr>) -> String {
+pub fn gen_asm(instrs: Vec<Instr>, data: HashMap<String, String>) -> String {
+    let mut code = String::new();
+
+    code.push_str("@section data\n");
+    for (n, raw) in data.iter() {
+        code.push_str(&format!("{n} = {raw}\n"));
+    }
+
+    code.push_str("@section text\n");
+
     let mut prologue = vec![Instr::CallLbl("main".to_string()), Instr::Halt];
     prologue.extend(instrs.clone());
     let instrs = jmp_lbl_optimization(prologue);
-    let mut code = String::new();
-
-    code.push_str("@section text\n");
 
     for instr in instrs {
         code.push_str(&match instr {
@@ -160,13 +166,15 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
 pub fn gen_instrs<'ip>(
     ast: &'ip TypedAstNode<'ip>,
     functions: HashMap<String, FunctionContext>,
-) -> CompilerResult<'ip, Vec<Instr>> {
+) -> CompilerResult<'ip, (Vec<Instr>, HashMap<String, String>)> {
     let mut compiler = Compiler {
         functions,
         label_counter: 0,
+        data_counter: 0,
+        data_strings: HashMap::new(),
         loop_stack: Vec::new(),
         cur_func: None,
     };
 
-    Ok(compiler.gen_instrs(ast)?)
+    Ok((compiler.gen_instrs(ast)?, compiler.data_strings))
 }
