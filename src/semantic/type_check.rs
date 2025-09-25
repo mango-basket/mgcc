@@ -963,7 +963,7 @@ impl<'ip> TypeChecker {
         }
 
         Ok(TypedAstNode::new(
-            TypedAstKind::Statements(typed_items),
+            TypedAstKind::Items(typed_items),
             node.get_span(),
             Type::Unit, // a block of items evaluates to unit
             last_ret,   // return status propagated from all items

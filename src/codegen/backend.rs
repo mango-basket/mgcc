@@ -106,6 +106,8 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
     let instrs = jmp_lbl_optimization(prologue);
     let mut code = String::new();
 
+    code.push_str("@section text\n");
+
     for instr in instrs {
         code.push_str(&match instr {
             Instr::Push(num) => format!("PUSH16 {}", num),
@@ -147,6 +149,7 @@ pub fn gen_asm(instrs: Vec<Instr>) -> String {
             Instr::Storer(rd, imm) => format!("STORER [{}, {}]", reg(rd), imm),
             Instr::Loadpb => "LOADPB".into(),
             Instr::Storepb => "STOREPB".into(),
+            Instr::Data(lbl) => format!("DATA {}", lbl),
         });
         code.push('\n');
     }
