@@ -344,7 +344,7 @@ impl<'ip> Compiler {
                     instrs.extend([
                         Instr::Push(lhs.eval_ty.get_size() as u16),
                         Instr::Mul,
-                        Instr::Sub,
+                        Instr::Add,
                     ]);
                     instrs.extend(self.gen_instrs(rhs)?);
                     if rhs.eval_ty.get_size() == 1 {
