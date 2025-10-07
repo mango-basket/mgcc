@@ -117,8 +117,6 @@ pub fn gen_asm(instrs: Vec<Instr>, data: HashMap<String, String>) -> String {
     for instr in instrs {
         code.push_str(&match instr {
             Instr::Push(num) => format!("PUSH16 {}", num),
-            Instr::Load(addr) => format!("LOAD8 {}", addr),
-            Instr::Store(addr) => format!("STORE8 {}", addr),
             Instr::Halt => "HALT".into(),
             Instr::Add => "ADD".into(),
             Instr::Sub => "SUB".into(),
@@ -144,17 +142,15 @@ pub fn gen_asm(instrs: Vec<Instr>, data: HashMap<String, String>) -> String {
             Instr::Mov(rd, rs) => format!("MOV {}, {}", reg(rd), reg(rs)),
             Instr::Pushr(rs) => format!("PUSHR {}", reg(rs)),
             Instr::Popr(rd) => format!("POPR {}", reg(rd)),
-            Instr::Loadp => "LOADP".into(),
-            Instr::Storep => "STOREP".into(),
+            Instr::Ldw => "LDW".into(),
+            Instr::Stw => "STW".into(),
             Instr::Call(ofst) => format!("CALL {}", ofst),
             Instr::Ret => "RET".into(),
-            Instr::Print => "PRINT".into(),
-            Instr::MvCur(ofst) => format!("MVCUR {}", ofst),
             Instr::CallLbl(id) => format!("CALL {}", id),
-            Instr::Loadr(rs, imm) => format!("LOADR [{}, {}]", reg(rs), imm),
-            Instr::Storer(rd, imm) => format!("STORER [{}, {}]", reg(rd), imm),
-            Instr::Loadpb => "LOADPB".into(),
-            Instr::Storepb => "STOREPB".into(),
+            Instr::Ldr(rs, imm) => format!("LDR [{}, {}]", reg(rs), imm),
+            Instr::Str(rd, imm) => format!("STR [{}, {}]", reg(rd), imm),
+            Instr::Ldb => "LDB".into(),
+            Instr::Stb => "STB".into(),
             Instr::Data(lbl) => format!("DATA {}", lbl),
         });
         code.push('\n');

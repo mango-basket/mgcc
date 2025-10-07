@@ -286,7 +286,7 @@ impl<'ip> Compiler {
             TypedAstKind::Identifier(kind) => {
                 if let TokenKind::Identifier(ref name) = kind {
                     if let Some(ofst) = self.lookup_local_slot(name) {
-                        instrs.push(Instr::Loadr(FP, ofst));
+                        instrs.push(Instr::Ldr(FP, ofst));
                     } else {
                         return Err(CompilerError::UndefinedIdentifier(ast.get_span()));
                     }
@@ -308,7 +308,7 @@ impl<'ip> Compiler {
                     .expect("unallocated local detected in codegen");
 
                 instrs.extend(self.gen_instrs(&rhs)?);
-                instrs.push(Instr::Storer(FP, slot));
+                instrs.push(Instr::Str(FP, slot));
             }
             TypedAstKind::Statements(asts) => {
                 for ast in asts {
@@ -328,12 +328,12 @@ impl<'ip> Compiler {
                     };
 
                     instrs.extend(self.gen_instrs(&rhs)?);
-                    instrs.push(Instr::Storer(FP, ofst));
+                    instrs.push(Instr::Str(FP, ofst));
                 }
                 TypedAstKind::Deref(inner) => {
                     instrs.extend(self.gen_instrs(&inner)?);
                     instrs.extend(self.gen_instrs(&rhs)?);
-                    instrs.push(Instr::Storep);
+                    instrs.push(Instr::Stw);
                 }
                 TypedAstKind::Index {
                     lhs: indexed,
@@ -348,9 +348,9 @@ impl<'ip> Compiler {
                     ]);
                     instrs.extend(self.gen_instrs(rhs)?);
                     if rhs.eval_ty.get_size() == 1 {
-                        instrs.push(Instr::Storepb);
+                        instrs.push(Instr::Stb);
                     } else {
-                        instrs.push(Instr::Storep);
+                        instrs.push(Instr::Stw);
                     }
                 }
                 _ => {}
@@ -460,7 +460,7 @@ impl<'ip> Compiler {
             }
             TypedAstKind::Deref(inner) => {
                 instrs.extend(self.gen_instrs(&inner)?);
-                instrs.push(Instr::Loadp);
+                instrs.push(Instr::Ldw);
             }
             TypedAstKind::Disp(printable) => {
                 instrs.extend(self.gen_instrs(&printable)?);
@@ -514,7 +514,7 @@ impl<'ip> Compiler {
             TypedAstKind::Return(expr_opt) => {
                 if let Some(expr) = expr_opt {
                     instrs.extend(self.gen_instrs(&expr)?); // compute return value
-                    instrs.push(Instr::Storer(
+                    instrs.push(Instr::Str(
                         FP,
                         self.lookup_local_slot("__return_addr").unwrap(),
                     ));
@@ -582,9 +582,9 @@ impl<'ip> Compiler {
 
                 // add them and access memory at the address
                 if ast.eval_ty.get_size() == 1 {
-                    instrs.extend([Instr::Add, Instr::Loadpb]);
+                    instrs.extend([Instr::Add, Instr::Ldb]);
                 } else {
-                    instrs.extend([Instr::Add, Instr::Loadp]);
+                    instrs.extend([Instr::Add, Instr::Ldw]);
                 }
             }
             TypedAstKind::Array(items) => {
@@ -602,7 +602,7 @@ impl<'ip> Compiler {
                 for (idx, item) in items.iter().enumerate() {
                     instrs.extend([
                         // Duplicate the top of the stack
-                        Instr::Loadr(SP, 2),
+                        Instr::Ldr(SP, 2),
                         Instr::Push(idx as u16),
                         Instr::Push(item.eval_ty.get_size() as u16),
                         Instr::Mul,
@@ -611,9 +611,9 @@ impl<'ip> Compiler {
                     instrs.extend(self.gen_instrs(item)?);
 
                     if item.eval_ty.get_size() == 1 {
-                        instrs.push(Instr::Storepb);
+                        instrs.push(Instr::Stb);
                     } else {
-                        instrs.push(Instr::Storep);
+                        instrs.push(Instr::Stw);
                     }
                 }
             }
