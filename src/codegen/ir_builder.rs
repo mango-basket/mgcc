@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use computils::instr::Instr;
 
 // sp and fp registers
-const SP: u8 = 4;
-const FP: u8 = 5;
+const SP: u8 = 8;
+const FP: u8 = 9;
 
 use crate::{
     error::{CompilerError, CompilerResult},
