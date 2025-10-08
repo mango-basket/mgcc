@@ -18,7 +18,7 @@ pub fn check_semantics<'ip>(
     funcs: &HashMap<String, FunctionContext>,
 ) -> CompilerResult<'ip, ()> {
     let mut checker = SemanticChecker::new(funcs);
-    checker.check_main()?;
+    // checker.check_main()?;
     checker.check(ast)
 }
 

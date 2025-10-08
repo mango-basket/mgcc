@@ -10,9 +10,9 @@ use crate::{
 
 fn reg(num: u8) -> String {
     match num {
-        0..4 => format!("r{num}"),
-        4 => format!("sp"),
-        5 => format!("fp"),
+        0..7 => format!("r{num}"),
+        8 => format!("sp"),
+        9 => format!("fp"),
         _ => unreachable!(),
     }
 }
@@ -111,6 +111,7 @@ pub fn gen_asm(instrs: Vec<Instr>, data: HashMap<String, String>) -> String {
     code.push_str("@section text\n");
 
     let mut prologue = vec![Instr::CallLbl("main".to_string()), Instr::Halt];
+
     prologue.extend(instrs.clone());
     let instrs = jmp_lbl_optimization(prologue);
 
