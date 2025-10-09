@@ -331,14 +331,15 @@ impl<'ip> Compiler {
                     instrs.push(Instr::Str(FP, ofst));
                 }
                 TypedAstKind::Deref(inner) => {
-                    instrs.extend(self.gen_instrs(&inner)?);
                     instrs.extend(self.gen_instrs(&rhs)?);
+                    instrs.extend(self.gen_instrs(&inner)?);
                     instrs.push(Instr::Stw);
                 }
                 TypedAstKind::Index {
                     lhs: indexed,
                     rhs: idx,
                 } => {
+                    instrs.extend(self.gen_instrs(rhs)?);
                     instrs.extend(self.gen_instrs(indexed)?);
                     instrs.extend(self.gen_instrs(idx)?);
                     instrs.extend([
@@ -346,7 +347,6 @@ impl<'ip> Compiler {
                         Instr::Mul,
                         Instr::Add,
                     ]);
-                    instrs.extend(self.gen_instrs(rhs)?);
                     if rhs.eval_ty.get_size() == 1 {
                         instrs.push(Instr::Stb);
                     } else {
@@ -465,7 +465,7 @@ impl<'ip> Compiler {
             TypedAstKind::Disp(printable) => {
                 instrs.extend(self.gen_instrs(&printable)?);
                 instrs.push(Instr::Popr(0));
-                instrs.push(Instr::CallLbl("print".into())) // prints r0
+                instrs.push(Instr::Int(0)) // prints r0
             }
             TypedAstKind::Items(asts) => {
                 for ast in asts {
@@ -547,12 +547,12 @@ impl<'ip> Compiler {
                 let arg_count = args.len();
                 if arg_count > 0 {
                     instrs.extend([
-                        Instr::Pushr(4),
+                        Instr::Pushr(SP),
                         Instr::Push(2),
                         Instr::Push(arg_count as u16),
                         Instr::Mul,
                         Instr::Add,
-                        Instr::Popr(4),
+                        Instr::Popr(SP),
                     ]);
                 }
             }
@@ -600,15 +600,15 @@ impl<'ip> Compiler {
                 instrs.extend([Instr::Pushr(SP), Instr::Push(2), Instr::Add]);
 
                 for (idx, item) in items.iter().enumerate() {
+                    instrs.extend(self.gen_instrs(item)?);
                     instrs.extend([
-                        // Duplicate the top of the stack
-                        Instr::Ldr(SP, 2),
+                        // Duplicate the address
+                        Instr::Ldr(SP, 4),
                         Instr::Push(idx as u16),
                         Instr::Push(item.eval_ty.get_size() as u16),
                         Instr::Mul,
                         Instr::Add,
                     ]);
-                    instrs.extend(self.gen_instrs(item)?);
 
                     if item.eval_ty.get_size() == 1 {
                         instrs.push(Instr::Stb);

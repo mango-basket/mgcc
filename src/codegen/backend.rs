@@ -153,6 +153,7 @@ pub fn gen_asm(instrs: Vec<Instr>, data: HashMap<String, String>) -> String {
             Instr::Ldb => "LDB".into(),
             Instr::Stb => "STB".into(),
             Instr::Data(lbl) => format!("DATA {}", lbl),
+            Instr::Int(int) => format!("INT {}", int),
         });
         code.push('\n');
     }
