@@ -664,8 +664,8 @@ impl<'ip> Compiler {
             TokenKind::And | TokenKind::Band => instrs.push(Instr::And),
             TokenKind::Or | TokenKind::Bor => instrs.push(Instr::Or),
             TokenKind::Xor => instrs.push(Instr::Xor),
-            TokenKind::Shl => instrs.extend([Instr::Neg, Instr::Shft]),
-            TokenKind::Shr => instrs.push(Instr::Shft),
+            TokenKind::Shl => instrs.push(Instr::Shl),
+            TokenKind::Shr => instrs.push(Instr::Shr),
 
             _ => {
                 return Err(CompilerError::UnexpectedToken {
