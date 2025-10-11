@@ -157,6 +157,19 @@ pub fn gen_asm(instrs: Vec<Instr>, data: HashMap<String, String>) -> String {
             Instr::Int(int) => format!("INT {}", int),
             Instr::Iret => "IRET".into(),
             Instr::Bkpt => "BKPT".into(),
+            Instr::CmpI(imm) => format!("CMPI {}", imm),
+            Instr::AddI(imm) => format!("ADDI {}", imm),
+            Instr::SubI(imm) => format!("SUBI {}", imm),
+            Instr::MulI(imm) => format!("MULI {}", imm),
+            Instr::DivI(imm) => format!("DIVI {}", imm),
+            Instr::NegI(imm) => format!("NEGI {}", imm),
+            Instr::ModI(imm) => format!("MODI {}", imm),
+            Instr::NotI(imm) => format!("NOTI {}", imm),
+            Instr::AndI(imm) => format!("ANDI {}", imm),
+            Instr::OrI(imm) => format!("ORI {}", imm),
+            Instr::XorI(imm) => format!("XORI {}", imm),
+            Instr::ShlI(imm) => format!("SHLI {}", imm),
+            Instr::ShrI(imm) => format!("SHRI {}", imm),
         });
         code.push('\n');
     }
