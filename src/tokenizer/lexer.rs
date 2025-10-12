@@ -101,10 +101,11 @@ impl<'ip> Lexer<'ip> {
         match byte {
             b'\\' => {
                 size += 1;
-                // read n|\|'
+                // read n|\|r'
                 let escape = self.input_iter.next().ok_or(CompilerError::UnexpectedEof)?;
                 byte = match escape.1 {
                     b'n' => b'\n',
+                    b'r' => b'\r',
                     b'\\' => b'\\',
                     b'\'' => b'\'',
                     x => {
