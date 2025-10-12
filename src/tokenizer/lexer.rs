@@ -25,7 +25,7 @@ impl<'ip> Lexer<'ip> {
         ch.is_ascii_alphabetic() || ch == &b'_' || (!is_starting && ch.is_ascii_digit())
     }
 
-    fn get_int(&mut self, start_char: u8) -> CompilerResult<'ip, (TokenKind, usize)> {
+    fn get_int(&mut self, start_char: u8, start: usize) -> CompilerResult<'ip, (TokenKind, usize)> {
         let mut int = ((start_char as u8) - b'0') as u16;
         let mut len = 1;
         while let Some((_, ch)) = self.input_iter.next_if(|(_, ch)| ch.is_ascii_digit()) {
@@ -33,6 +33,13 @@ impl<'ip> Lexer<'ip> {
                 .wrapping_mul(10)
                 .wrapping_add(((ch as u8) - b'0') as u16);
             len += 1;
+        }
+
+        if int as i16 > i16::MAX {
+            return Err(CompilerError::LexerError(
+                format!("int literal too big for 16-bit integer"),
+                Span::new(start, start + len, self.input),
+            ));
         }
 
         Ok((TokenKind::Int(int), len))
@@ -244,7 +251,7 @@ impl<'ip> Iterator for Lexer<'ip> {
                 TokenKind::Gt,
             ),
             ws if (ws as char).is_whitespace() => return self.next(),
-            ch if ch.is_ascii_digit() => self.get_int(ch),
+            ch if ch.is_ascii_digit() => self.get_int(ch, start),
             ch if Self::is_ident(&ch, true) => self.get_ident(ch),
             unknown => {
                 return Some(Err(CompilerError::UnknownChar {
