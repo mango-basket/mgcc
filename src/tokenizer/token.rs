@@ -12,6 +12,7 @@ pub enum Keyword {
     Fn,
     Return,
     As,
+    Breakpoint,
 }
 
 impl Keyword {
@@ -27,6 +28,7 @@ impl Keyword {
             "fn" => Some(Keyword::Fn),
             "return" => Some(Keyword::Return),
             "as" => Some(Keyword::As),
+            "breakpoint" => Some(Keyword::Breakpoint),
             _ => None,
         }
     }

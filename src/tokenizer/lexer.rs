@@ -35,7 +35,7 @@ impl<'ip> Lexer<'ip> {
             len += 1;
         }
 
-        if int as i16 > i16::MAX {
+        if int > (i16::MAX) as u16 {
             return Err(CompilerError::LexerError(
                 format!("int literal too big for 16-bit integer"),
                 Span::new(start, start + len, self.input),

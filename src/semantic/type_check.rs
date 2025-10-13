@@ -288,6 +288,12 @@ impl<'ip> TypeChecker {
             AstKind::Index { lhs, rhs } => self.check_index(ast, lhs, rhs),
             AstKind::Array(items) => self.check_array(ast, items),
             AstKind::ArrayDef { size, ty } => self.check_array_def(ast, size, ty),
+            AstKind::Breakpoint => Ok(TypedAstNode::new(
+                TypedAstKind::Breakpoint,
+                ast.get_span(),
+                Type::Unit,
+                RetStatus::Never,
+            )),
         }
     }
 
@@ -453,7 +459,6 @@ impl<'ip> TypeChecker {
         Ok(TypedAstNode::new(
             TypedAstKind::Func {
                 name: name.clone(),
-                params: params_typed,
                 body: Box::new(body_typed),
             },
             node.get_span(),

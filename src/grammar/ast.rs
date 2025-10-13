@@ -44,7 +44,6 @@ pub enum TypedAstKind<'ip> {
     },
     Func {
         name: Token<'ip>,
-        params: Vec<(Token<'ip>, Type)>,
         body: Box<TypedAstNode<'ip>>,
     },
     Loop(Box<TypedAstNode<'ip>>),
@@ -70,6 +69,7 @@ pub enum TypedAstKind<'ip> {
         ty: Type,
     },
     String(TokenKind), // var a[4];
+    Breakpoint,
 }
 
 #[derive(Debug, Clone)]
@@ -322,6 +322,7 @@ pub enum AstKind<'ip> {
         ty: Box<AstNode<'ip>>,
     },
     String(TokenKind),
+    Breakpoint,
 }
 
 impl<'ip> TypedAstKind<'ip> {
@@ -329,7 +330,7 @@ impl<'ip> TypedAstKind<'ip> {
         use TypedAstKind::*;
 
         match self {
-            Identifier(_) | Int(_) | Bool(_) | Char(_) | Array(_) | String(_) => true,
+            Breakpoint | Identifier(_) | Int(_) | Bool(_) | Char(_) | Array(_) | String(_) => true,
             Ref(_) => false,
             Deref(_) => false,
             UnaryOp { .. } => false,
@@ -499,6 +500,9 @@ impl<'ip> AstNode<'ip> {
             }
             AstKind::String(_) => {
                 format!("{}String({})", pad, self.span.get_str())
+            }
+            AstKind::Breakpoint => {
+                format!("{}Breakpoint", pad)
             }
         }
     }

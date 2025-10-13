@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::io::{self, stdin, stdout, Write};
 
 mod codegen;

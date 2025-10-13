@@ -109,10 +109,6 @@ impl<'ip> Parser<'ip> {
         }
     }
 
-    pub fn expected_next(&mut self) -> CompilerResult<'ip, Token<'ip>> {
-        self.next().ok_or(CompilerError::UnexpectedEof)?
-    }
-
     pub fn next_if<F>(&mut self, f: F) -> Option<CompilerResult<'ip, Token<'ip>>>
     where
         F: Fn(&Token<'ip>) -> bool,
@@ -435,6 +431,11 @@ impl<'ip> Parser<'ip> {
                     Ok(self.gen_node(AstKind::Disp(Box::new(expr))))
                 }
                 TokenKind::Identifier(_) | TokenKind::Star => self.parse_reassign(),
+                TokenKind::Keyword(Keyword::Breakpoint) => {
+                    self.bump()?;
+                    self.consume_line_end()?;
+                    Ok(self.gen_node(AstKind::Breakpoint))
+                }
                 TokenKind::Keyword(Keyword::Break) => self.parse_break_stmt(),
                 TokenKind::Keyword(Keyword::Return) => self.parse_ret_stmt(),
                 TokenKind::Keyword(Keyword::Continue) => {

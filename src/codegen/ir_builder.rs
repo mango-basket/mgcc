@@ -472,11 +472,7 @@ impl<'ip> Compiler {
                     instrs.extend(self.gen_instrs(&ast)?);
                 }
             }
-            TypedAstKind::Func {
-                name,
-                params: _,
-                body,
-            } => {
+            TypedAstKind::Func { name, body } => {
                 let fname = name.span.get_str().to_string();
                 instrs.push(Instr::Lbl(fname.clone()));
 
@@ -629,6 +625,7 @@ impl<'ip> Compiler {
                     Instr::Add,
                 ]);
             }
+            TypedAstKind::Breakpoint => instrs.push(Instr::Bkpt),
         }
 
         Ok(instrs)

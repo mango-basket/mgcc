@@ -135,6 +135,7 @@ impl<'a> SemanticChecker<'a> {
             TypedAstKind::Index { .. } => Ok(()),
             TypedAstKind::Array(_) => Ok(()),
             TypedAstKind::ArrayDef { .. } => Ok(()),
+            TypedAstKind::Breakpoint => Ok(()),
         }
     }
 }
