@@ -159,6 +159,7 @@ impl<'ip> Lexer<'ip> {
                     size += 1;
                     let resolved = match esc {
                         b'n' => b'\n',
+                        b'r' => b'\r',
                         b'\\' => b'\\',
                         b'"' => b'"',
                         x => {
