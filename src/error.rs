@@ -19,7 +19,7 @@ pub enum CompilerError<'ip> {
     UnexpectedType {
         got: Type,
         expected: String,
-        slice: Span<'ip>,
+        span: Span<'ip>,
     },
     UnexpectedEof,
     OpTypeError {
@@ -58,7 +58,7 @@ impl<'ip> Display for CompilerError<'ip> {
             Self::UnexpectedType {
                 got,
                 expected,
-                slice,
+                span: slice,
             } => {
                 write!(
                     f,

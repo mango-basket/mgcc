@@ -13,6 +13,7 @@ pub enum Keyword {
     Return,
     As,
     Breakpoint,
+    While,
 }
 
 impl Keyword {
@@ -29,6 +30,7 @@ impl Keyword {
             "return" => Some(Keyword::Return),
             "as" => Some(Keyword::As),
             "breakpoint" => Some(Keyword::Breakpoint),
+            "while" => Some(Keyword::While),
             _ => None,
         }
     }

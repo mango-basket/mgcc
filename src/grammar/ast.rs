@@ -47,6 +47,10 @@ pub enum TypedAstKind<'ip> {
         body: Box<TypedAstNode<'ip>>,
     },
     Loop(Box<TypedAstNode<'ip>>),
+    While {
+        cond: Box<TypedAstNode<'ip>>,
+        body: Box<TypedAstNode<'ip>>,
+    },
     Break(Option<Box<TypedAstNode<'ip>>>),
     Return(Option<Box<TypedAstNode<'ip>>>),
     Continue,
@@ -300,6 +304,10 @@ pub enum AstKind<'ip> {
         ret: Option<Box<AstNode<'ip>>>,
     },
     Loop(Box<AstNode<'ip>>),
+    While {
+        cond: Box<AstNode<'ip>>,
+        body: Box<AstNode<'ip>>,
+    },
     Break(Option<Box<AstNode<'ip>>>),
     Return(Option<Box<AstNode<'ip>>>),
     Continue,
@@ -350,6 +358,7 @@ impl<'ip> TypedAstKind<'ip> {
             As { .. } => false,
             ArrayDef { .. } => false,
             Index { .. } => false,
+            While { .. } => false,
         }
     }
 }
@@ -503,6 +512,9 @@ impl<'ip> AstNode<'ip> {
             }
             AstKind::Breakpoint => {
                 format!("{}Breakpoint", pad)
+            }
+            AstKind::While { cond, body } => {
+                format!("{}While ({}) {}", pad, cond.pretty(0), body.pretty(0))
             }
         }
     }

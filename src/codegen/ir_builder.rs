@@ -407,6 +407,33 @@ impl<'ip> Compiler {
 
                 self.loop_stack.pop();
             }
+            TypedAstKind::While { cond, body } => {
+                let head_lbl = self.next_label();
+                let body_lbl = self.next_label();
+                let end_lbl = self.next_label();
+
+                // push loop context (same as Loop)
+                self.loop_stack.push((head_lbl.clone(), end_lbl.clone()));
+
+                // head: evaluate condition
+                instrs.push(Instr::Lbl(head_lbl.clone()));
+
+                // compile cond and generate conditional jump
+                instrs.extend(self.gen_branching(&cond, body_lbl.clone(), end_lbl.clone())?);
+
+                // body:
+                instrs.push(Instr::Lbl(body_lbl));
+                instrs.extend(self.gen_instrs(&body)?);
+
+                // jump back to head
+                instrs.push(Instr::JmpLbl(head_lbl.clone()));
+
+                // end label
+                instrs.push(Instr::Lbl(end_lbl));
+
+                // pop loop context
+                self.loop_stack.pop();
+            }
             TypedAstKind::Continue => instrs.push(Instr::JmpLbl(
                 self.loop_stack
                     .last()

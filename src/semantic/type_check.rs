@@ -294,6 +294,7 @@ impl<'ip> TypeChecker {
                 Type::Unit,
                 RetStatus::Never,
             )),
+            AstKind::While { cond, body } => self.check_while(ast, cond, body),
         }
     }
 
@@ -334,7 +335,7 @@ impl<'ip> TypeChecker {
                 return Err(CompilerError::UnexpectedType {
                     got: got.eval_ty.clone(),
                     expected: expected.to_string(),
-                    slice: name.span.clone(),
+                    span: name.span.clone(),
                 });
             }
         }
@@ -438,7 +439,7 @@ impl<'ip> TypeChecker {
                     return Err(CompilerError::UnexpectedType {
                         got: ty.clone(),
                         expected: ret_ty.to_string(),
-                        slice: body.get_span(),
+                        span: body.get_span(),
                     });
                 }
             }
@@ -447,7 +448,7 @@ impl<'ip> TypeChecker {
                     return Err(CompilerError::UnexpectedType {
                         got: Type::Unit,
                         expected: ret_ty.to_string(),
-                        slice: body.get_span(),
+                        span: body.get_span(),
                     });
                 }
             }
@@ -627,7 +628,7 @@ impl<'ip> TypeChecker {
             return Err(CompilerError::UnexpectedType {
                 got: cond_typed.eval_ty,
                 expected: "bool".into(),
-                slice: condition.get_span(),
+                span: condition.get_span(),
             });
         }
 
@@ -647,7 +648,7 @@ impl<'ip> TypeChecker {
                     return Err(CompilerError::UnexpectedType {
                         got: else_typed.eval_ty,
                         expected: if_typed.eval_ty.to_string(),
-                        slice: else_ast.get_span(),
+                        span: else_ast.get_span(),
                     });
                 }
 
@@ -742,7 +743,7 @@ impl<'ip> TypeChecker {
             return Err(CompilerError::UnexpectedType {
                 got: rhs_typed.eval_ty,
                 expected: var_typed.eval_ty.to_string(),
-                slice: rhs.get_span(),
+                span: rhs.get_span(),
             });
         }
 
@@ -776,7 +777,7 @@ impl<'ip> TypeChecker {
                 return Err(CompilerError::UnexpectedType {
                     got: rhs_typed.eval_ty,
                     expected: annotated_ty.to_string(),
-                    slice: rhs.get_span(),
+                    span: rhs.get_span(),
                 });
             }
         } else {
@@ -1122,6 +1123,35 @@ impl<'ip> TypeChecker {
             ))
         }
     }
+
+    fn check_while(
+        &mut self,
+        node: &'ip AstNode<'ip>,
+        cond: &'ip AstNode<'ip>,
+        body: &'ip AstNode<'ip>,
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let cond_typed = self.infer_type(cond)?;
+        if cond_typed.eval_ty != Type::Bool {
+            return Err(CompilerError::UnexpectedType {
+                got: cond_typed.eval_ty,
+                expected: "bool".to_string(),
+                span: cond.get_span(),
+            });
+        }
+
+        self.loop_stack.push(None);
+        let body_typed = self.infer_type(body)?;
+
+        Ok(TypedAstNode::new(
+            TypedAstKind::While {
+                cond: Box::new(cond_typed),
+                body: Box::new(body_typed.clone()),
+            },
+            node.get_span(),
+            body_typed.eval_ty,
+            body_typed.ret,
+        ))
+    }
 }
 
 fn combine_branches<'ip>(
@@ -1139,7 +1169,7 @@ fn combine_branches<'ip>(
         (Always(lt), Always(rt)) => Err(CompilerError::UnexpectedType {
             got: rt.clone(),
             expected: lt.to_string(),
-            slice: span,
+            span,
         }),
 
         // both maybe return, unify types if they match
@@ -1147,7 +1177,7 @@ fn combine_branches<'ip>(
         (Maybe(lt), Maybe(rt)) => Err(CompilerError::UnexpectedType {
             got: rt.clone(),
             expected: lt.to_string(),
-            slice: span,
+            span,
         }),
 
         // mix of always + never -> only some paths return
@@ -1158,7 +1188,7 @@ fn combine_branches<'ip>(
         (Always(t), Maybe(u)) | (Maybe(u), Always(t)) => Err(CompilerError::UnexpectedType {
             got: u.clone(),
             expected: t.to_string(),
-            slice: span,
+            span,
         }),
 
         // mix of maybe + never -> stays maybe

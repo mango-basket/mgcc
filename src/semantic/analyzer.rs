@@ -73,6 +73,13 @@ impl<'a> SemanticChecker<'a> {
                 self.loop_depth -= 1;
                 Ok(())
             }
+            TypedAstKind::While { cond, body } => {
+                self.loop_depth += 1;
+                self.check(&*body)?;
+                self.check(&*cond)?;
+                self.loop_depth -= 1;
+                Ok(())
+            }
             TypedAstKind::Statements(stmts) | TypedAstKind::Items(stmts) => {
                 for stmt in stmts {
                     self.check(&stmt)?;
