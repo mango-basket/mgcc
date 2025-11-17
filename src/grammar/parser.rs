@@ -611,6 +611,7 @@ impl<'ip> Parser<'ip> {
             // if/loop are parsed as atoms (token already consumed)
             TokenKind::Keyword(Keyword::If) => self.parse_if_expr(),
             TokenKind::Keyword(Keyword::Loop) => self.parse_loop_expr(),
+            TokenKind::Keyword(Keyword::While) => self.parse_while_expr(),
 
             _ => Err(CompilerError::UnexpectedToken {
                 got: token,
@@ -708,6 +709,22 @@ impl<'ip> Parser<'ip> {
         let body = self.parse_statements()?;
         expect_match!(self, TokenKind::Rbrace)?;
         Ok(self.gen_node(AstKind::Loop(Box::new(body))))
+    }
+
+    fn parse_while_expr(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        // slice for `while` already started in atom
+        // parse condition expression
+        let cond = self.parse_expression()?;
+
+        // parse the body block
+        expect_match!(self, TokenKind::Lbrace)?;
+        let body = self.parse_statements()?;
+        expect_match!(self, TokenKind::Rbrace)?;
+
+        Ok(self.gen_node(AstKind::While {
+            cond: Box::new(cond),
+            body: Box::new(body),
+        }))
     }
 
     fn parse_array(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
