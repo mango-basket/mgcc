@@ -75,6 +75,27 @@ impl<'ip> Lexer<'ip> {
                 }
             }
         }
+
+        Ok((fallback, 1))
+    }
+
+    fn get_multichar_tok(
+        &mut self,
+        suffixes: &[(Bytes, TokenKind)],
+        fallback: TokenKind,
+    ) -> CompilerResult<'ip, (TokenKind, usize)> {
+        let mut len = 1;
+        for (suffix, kind) in suffixes {
+            let iter = self.input_iter.clone();
+
+            // zip and match bytes
+            for (suf, (_, real)) in suffix.clone().zip(iter) {
+                if suf != real {
+                    break;
+                }
+            }
+        }
+
         Ok((fallback, 1))
     }
 
@@ -224,10 +245,12 @@ impl<'ip> Iterator for Lexer<'ip> {
             b';' | b'\n' => Ok((TokenKind::LineEnd, self.get_line_end())),
             b'\'' => self.get_char(),
             b'"' => self.get_string(),
-            b'+' => Ok((TokenKind::Plus, 1)),
-            b'*' => Ok((TokenKind::Star, 1)),
-            b'/' => Ok((TokenKind::Slash, 1)),
-            b'%' => Ok((TokenKind::Mod, 1)),
+            b'+' => self.get_twochar_tok(&[(b'=', TokenKind::PlusAssign)], (TokenKind::Plus)),
+            b'*' => self.get_twochar_tok(&[(b'=', TokenKind::StarAssign)], (TokenKind::Star)),
+            b'/' => self.get_twochar_tok(&[(b'=', TokenKind::SlashAssign)], (TokenKind::Slash)),
+            b'%' => self.get_twochar_tok(&[(b'=', TokenKind::ModAssign)], (TokenKind::Mod)),
+            b'^' => self.get_twochar_tok(&[(b'=', TokenKind::XorAssign)], (TokenKind::Xor)),
+
             b'@' => Ok((TokenKind::Ref, 1)),
             b'(' => Ok((TokenKind::Lparen, 1)),
             b')' => Ok((TokenKind::Rparen, 1)),
@@ -236,22 +259,43 @@ impl<'ip> Iterator for Lexer<'ip> {
             b'[' => Ok((TokenKind::Lsquare, 1)),
             b']' => Ok((TokenKind::Rsquare, 1)),
             b':' => Ok((TokenKind::Colon, 1)),
-            b'^' => Ok((TokenKind::Xor, 1)),
             b'~' => Ok((TokenKind::Bnot, 1)),
             b',' => Ok((TokenKind::Comma, 1)),
-            b'-' => self.get_twochar_tok(&[(b'>', TokenKind::Arrow)], TokenKind::Minus),
-            b'&' => self.get_twochar_tok(&[(b'&', TokenKind::And)], TokenKind::Band),
-            b'|' => self.get_twochar_tok(&[(b'|', TokenKind::Or)], TokenKind::Bor),
-            b'=' => self.get_twochar_tok(&[(b'=', TokenKind::Eq)], TokenKind::Assign),
-            b'!' => self.get_twochar_tok(&[(b'=', TokenKind::Neq)], TokenKind::Not),
-            b'<' => self.get_twochar_tok(
-                &[(b'=', TokenKind::Lte), (b'<', TokenKind::Shl)],
+
+            b'-' => self.get_twochar_tok(
+                &[(b'>', TokenKind::Arrow), (b'=', TokenKind::MinusAssign)],
+                TokenKind::Minus,
+            ),
+
+            b'&' => self.get_twochar_tok(
+                &[(b'&', TokenKind::And), (b'=', TokenKind::BandAssign)],
+                TokenKind::Band,
+            ),
+
+            b'|' => self.get_twochar_tok(
+                &[(b'|', TokenKind::Or), (b'=', TokenKind::BorAssign)],
+                TokenKind::Bor,
+            ),
+
+            b'<' => self.get_multichar_tok(
+                &[
+                    ("<=".bytes(), TokenKind::ShlAssign),
+                    ("=".bytes(), TokenKind::Lte),
+                    ("<".bytes(), TokenKind::Shl),
+                ],
                 TokenKind::Lt,
             ),
-            b'>' => self.get_twochar_tok(
-                &[(b'=', TokenKind::Gte), (b'>', TokenKind::Shr)],
+            b'>' => self.get_multichar_tok(
+                &[
+                    (">=".bytes(), TokenKind::ShrAssign),
+                    ("=".bytes(), TokenKind::Gte),
+                    (">".bytes(), TokenKind::Shr),
+                ],
                 TokenKind::Gt,
             ),
+
+            b'=' => self.get_twochar_tok(&[(b'=', TokenKind::Eq)], TokenKind::Assign),
+            b'!' => self.get_twochar_tok(&[(b'=', TokenKind::Neq)], TokenKind::Not),
             ws if (ws as char).is_whitespace() => return self.next(),
             ch if ch.is_ascii_digit() => self.get_int(ch, start),
             ch if Self::is_ident(&ch, true) => self.get_ident(ch),

@@ -76,6 +76,17 @@ pub enum TokenKind {
     Rsquare,
     Comma,
     Arrow,
+
+    PlusAssign,
+    MinusAssign,
+    StarAssign,
+    SlashAssign,
+    ModAssign,
+    BandAssign,
+    BorAssign,
+    XorAssign,
+    ShlAssign,
+    ShrAssign,
 }
 
 #[derive(Clone, Default)]
