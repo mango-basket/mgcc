@@ -258,6 +258,7 @@ impl<'ip> TypeChecker {
             AstKind::Identifier(_) => self.check_identifier(ast),
             AstKind::VarDef { name, vartype, rhs } => self.check_var_def(ast, name, vartype, rhs),
             AstKind::Reassign { lhs, rhs } => self.check_reassign(ast, lhs, rhs),
+            AstKind::UpdateAssign { lhs, op, rhs } => self.check_update_assign(ast, lhs, op, rhs),
             AstKind::Statements(stmts) => self.check_statements(ast, stmts),
             AstKind::IfElse {
                 condition,
@@ -828,53 +829,7 @@ impl<'ip> TypeChecker {
 
         let ret = combine_seq(&ltyped.ret, &rtyped.ret);
 
-        let eval_ty = match (
-            op.kind.clone(),
-            ltyped.eval_ty.clone(),
-            rtyped.eval_ty.clone(),
-        ) {
-            // arithmetic
-            (TokenKind::Plus, Type::Int, Type::Int)
-            | (TokenKind::Minus, Type::Int, Type::Int)
-            | (TokenKind::Star, Type::Int, Type::Int)
-            | (TokenKind::Mod, Type::Int, Type::Int)
-            | (TokenKind::Slash, Type::Int, Type::Int) => Ok(Type::Int),
-
-            // equality
-            (TokenKind::Eq, l, r) if l == r => Ok(Type::Bool),
-            (TokenKind::Neq, l, r) if l == r => Ok(Type::Bool),
-
-            // comparison
-            (TokenKind::Gt, a, b)
-            | (TokenKind::Gte, a, b)
-            | (TokenKind::Lt, a, b)
-            | (TokenKind::Lte, a, b)
-                if a == b && matches!(a, Type::Int | Type::Char) =>
-            {
-                Ok(Type::Bool)
-            }
-
-            // logical
-            (TokenKind::And, Type::Bool, Type::Bool) | (TokenKind::Or, Type::Bool, Type::Bool) => {
-                Ok(Type::Bool)
-            }
-
-            // bitwise
-            (TokenKind::Band, Type::Int, Type::Int)
-            | (TokenKind::Bor, Type::Int, Type::Int)
-            | (TokenKind::Xor, Type::Int, Type::Int) => Ok(Type::Int),
-
-            // shifts
-            (TokenKind::Shl, Type::Int, Type::Int) | (TokenKind::Shr, Type::Int, Type::Int) => {
-                Ok(Type::Int)
-            }
-
-            _ => Err(CompilerError::OpTypeError {
-                op: op.clone(),
-                lhs: Some(ltyped.eval_ty.clone()),
-                rhs: rtyped.eval_ty.clone(),
-            }),
-        }?;
+        let eval_ty = Self::check_binop_compatibility(op, &ltyped, &rtyped)?;
 
         Ok(TypedAstNode::new(
             TypedAstKind::BinaryOp {
@@ -884,6 +839,67 @@ impl<'ip> TypeChecker {
             },
             node.get_span(),
             eval_ty,
+            ret,
+        ))
+    }
+
+    fn check_update_assign(
+        &mut self,
+        ast: &'ip AstNode<'ip>,
+        lhs: &'ip AstNode<'ip>,
+        op: &'ip Token<'ip>,
+        rhs: &'ip AstNode<'ip>,
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        // infer types first
+        let lhs_typed = self.infer_type(lhs)?;
+        let rhs_typed = self.infer_type(rhs)?;
+
+        // ensure lhs is assignable (ident, deref, index)
+        self.check_reassign_lhs(lhs)?;
+
+        // map update-op to underlying binary op
+        let mapped_op = match op.kind {
+            TokenKind::PlusAssign => TokenKind::Plus,
+            TokenKind::MinusAssign => TokenKind::Minus,
+            TokenKind::StarAssign => TokenKind::Star,
+            TokenKind::SlashAssign => TokenKind::Slash,
+            TokenKind::ModAssign => TokenKind::Mod,
+            TokenKind::BandAssign => TokenKind::Band,
+            TokenKind::BorAssign => TokenKind::Bor,
+            TokenKind::XorAssign => TokenKind::Xor,
+            TokenKind::ShlAssign => TokenKind::Shl,
+            TokenKind::ShrAssign => TokenKind::Shr,
+            _ => {
+                return Err(CompilerError::OpTypeError {
+                    op: op.clone(),
+                    lhs: Some(lhs_typed.eval_ty.clone()),
+                    rhs: rhs_typed.eval_ty.clone(),
+                })
+            }
+        };
+
+        // check that "lhs <mapped_op> rhs" is valid (don't use the result, just validate)
+        let ty = Self::check_binop_compatibility(op, &lhs_typed, &rhs_typed)?;
+
+        if ty != lhs_typed.eval_ty {
+            return Err(CompilerError::UnexpectedType {
+                got: ty,
+                expected: lhs_typed.eval_ty.to_string(),
+                span: ast.get_span(),
+            });
+        }
+
+        // sequence
+        let ret = combine_seq(&lhs_typed.ret, &rhs_typed.ret);
+
+        Ok(TypedAstNode::new(
+            TypedAstKind::UpdateAssign {
+                lhs: Box::new(lhs_typed),
+                op: op.clone(),
+                rhs: Box::new(rhs_typed),
+            },
+            ast.get_span(),
+            Type::Unit,
             ret,
         ))
     }
@@ -1151,6 +1167,60 @@ impl<'ip> TypeChecker {
             body_typed.eval_ty,
             body_typed.ret,
         ))
+    }
+
+    fn check_binop_compatibility(
+        op: &'ip Token<'ip>,
+        ltyped: &TypedAstNode<'_>,
+        rtyped: &TypedAstNode<'_>,
+    ) -> Result<Type, CompilerError<'ip>> {
+        match (
+            op.kind.clone(),
+            ltyped.eval_ty.clone(),
+            rtyped.eval_ty.clone(),
+        ) {
+            // arithmetic
+            (TokenKind::Plus, Type::Int, Type::Int)
+            | (TokenKind::Minus, Type::Int, Type::Int)
+            | (TokenKind::Star, Type::Int, Type::Int)
+            | (TokenKind::Mod, Type::Int, Type::Int)
+            | (TokenKind::Slash, Type::Int, Type::Int) => Ok(Type::Int),
+
+            // equality
+            (TokenKind::Eq, l, r) if l == r => Ok(Type::Bool),
+            (TokenKind::Neq, l, r) if l == r => Ok(Type::Bool),
+
+            // comparison
+            (TokenKind::Gt, a, b)
+            | (TokenKind::Gte, a, b)
+            | (TokenKind::Lt, a, b)
+            | (TokenKind::Lte, a, b)
+                if a == b && matches!(a, Type::Int | Type::Char) =>
+            {
+                Ok(Type::Bool)
+            }
+
+            // logical
+            (TokenKind::And, Type::Bool, Type::Bool) | (TokenKind::Or, Type::Bool, Type::Bool) => {
+                Ok(Type::Bool)
+            }
+
+            // bitwise
+            (TokenKind::Band, Type::Int, Type::Int)
+            | (TokenKind::Bor, Type::Int, Type::Int)
+            | (TokenKind::Xor, Type::Int, Type::Int) => Ok(Type::Int),
+
+            // shifts
+            (TokenKind::Shl, Type::Int, Type::Int) | (TokenKind::Shr, Type::Int, Type::Int) => {
+                Ok(Type::Int)
+            }
+
+            _ => Err(CompilerError::OpTypeError {
+                op: op.clone(),
+                lhs: Some(ltyped.eval_ty.clone()),
+                rhs: rtyped.eval_ty.clone(),
+            }),
+        }
     }
 }
 

@@ -35,6 +35,11 @@ pub enum TypedAstKind<'ip> {
         lhs: Box<TypedAstNode<'ip>>,
         rhs: Box<TypedAstNode<'ip>>,
     },
+    UpdateAssign {
+        lhs: Box<TypedAstNode<'ip>>,
+        op: Token<'ip>,
+        rhs: Box<TypedAstNode<'ip>>,
+    },
     Statements(Vec<TypedAstNode<'ip>>),
     Items(Vec<TypedAstNode<'ip>>),
     IfElse {
@@ -290,6 +295,11 @@ pub enum AstKind<'ip> {
         lhs: Box<AstNode<'ip>>,
         rhs: Box<AstNode<'ip>>,
     },
+    UpdateAssign {
+        lhs: Box<AstNode<'ip>>,
+        op: Token<'ip>,
+        rhs: Box<AstNode<'ip>>,
+    },
     Statements(Vec<AstNode<'ip>>),
     Items(Vec<AstNode<'ip>>),
     IfElse {
@@ -359,166 +369,12 @@ impl<'ip> TypedAstKind<'ip> {
             ArrayDef { .. } => false,
             Index { .. } => false,
             While { .. } => false,
+            UpdateAssign { .. } => false,
         }
     }
 }
 
 impl<'ip> AstNode<'ip> {
-    pub fn pretty(&self, indent: usize) -> String {
-        let pad = "  ".repeat(indent);
-        match &self.kind {
-            AstKind::Identifier(_) => format!("{}Ident({})", pad, self.span.get_str()),
-            AstKind::Int(_) => format!("{}Int({})", pad, self.span.get_str()),
-            AstKind::Bool(_) => format!("{}Bool({})", pad, self.span.get_str()),
-            AstKind::Char(_) => format!("{}Char({})", pad, self.span.get_str()),
-            AstKind::Ref(inner) => format!("{}Ref({})", pad, inner.pretty(0)),
-            AstKind::Deref(inner) => format!("{}Deref({})", pad, inner.pretty(0)),
-            AstKind::UnaryOp { op, operand } => {
-                format!(
-                    "{}UnaryOp({},{})",
-                    pad,
-                    op.span.get_str(),
-                    operand.pretty(0)
-                )
-            }
-            AstKind::BinaryOp { left, op, right } => {
-                format!(
-                    "{}BinaryOp({},{},{})",
-                    pad,
-                    op.span.get_str(),
-                    left.pretty(0),
-                    right.pretty(0)
-                )
-            }
-            AstKind::VarDef { name, vartype, rhs } => {
-                if let Some(t) = vartype {
-                    format!(
-                        "{}VarDef({}:{},{})",
-                        pad,
-                        name.span.get_str(),
-                        t.pretty(0),
-                        rhs.pretty(0)
-                    )
-                } else {
-                    format!("{}VarDef({},{})", pad, name.span.get_str(), rhs.pretty(0))
-                }
-            }
-            AstKind::Reassign { lhs, rhs } => {
-                format!("{}Reassign({}, {})", pad, lhs.pretty(0), rhs.pretty(0))
-            }
-            AstKind::Statements(stmts) => {
-                let mut s = format!("{}Statements", pad);
-                for stmt in stmts {
-                    s.push('\n');
-                    s.push_str(&stmt.pretty(indent + 1));
-                }
-                s
-            }
-            AstKind::IfElse {
-                condition,
-                ifbody,
-                elsebody,
-            } => {
-                let else_str = if let Some(e) = elsebody {
-                    format!(", Else({})", e.pretty(0))
-                } else {
-                    "".to_string()
-                };
-                format!(
-                    "{}If({},{}){}",
-                    pad,
-                    condition.pretty(0),
-                    ifbody.pretty(0),
-                    else_str
-                )
-            }
-            AstKind::Loop(body) => format!("{}Loop({})", pad, body.pretty(0)),
-            AstKind::Break(expr_opt) => {
-                if let Some(expr) = expr_opt {
-                    format!("{}Break({})", pad, expr.pretty(0))
-                } else {
-                    format!("{}Break", pad)
-                }
-            }
-            AstKind::Continue => format!("{}Continue", pad),
-            AstKind::Disp(ast) => format!("{}Disp {}", pad, ast.pretty(0)),
-            AstKind::Items(stmts) => {
-                let mut s = format!("{}Items", pad);
-                for stmt in stmts {
-                    s.push('\n');
-                    s.push_str(&stmt.pretty(indent + 1));
-                }
-                s
-            }
-            AstKind::Func {
-                name,
-                params,
-                body,
-                ret,
-            } => {
-                let params_str = params
-                    .iter()
-                    .map(|(n, t)| format!("{}:{}", n.span.get_str(), t.pretty(0)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let ret_str = if let Some(r) = ret {
-                    format!(" -> {}", r.pretty(0))
-                } else {
-                    "".to_string()
-                };
-                format!(
-                    "{}Func({}({}){} {})",
-                    pad,
-                    name.span.get_str(),
-                    params_str,
-                    ret_str,
-                    body.pretty(indent + 1)
-                )
-            }
-            AstKind::Return(expr_opt) => {
-                if let Some(expr) = expr_opt {
-                    format!("{}Return({})", pad, expr.pretty(0))
-                } else {
-                    format!("{}Return", pad)
-                }
-            }
-            AstKind::FuncCall { name, args: params } => {
-                let params_str = params
-                    .iter()
-                    .map(|n| format!("{}", n.pretty(0)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("{pad}Call {} ({params_str})", name.span.to_string())
-            }
-            AstKind::As { lhs, rhs } => {
-                format!("{pad}{} as {}", lhs.pretty(0), rhs.span.get_str())
-            }
-            AstKind::Index { lhs, rhs } => {
-                format!("{pad}{}[{}]", lhs.pretty(0), rhs.pretty(0))
-            }
-            AstKind::Array(items) => {
-                let mut s = format!("{}Array", pad);
-                for item in items {
-                    s.push('\n');
-                    s.push_str(&item.pretty(indent + 1));
-                }
-                s
-            }
-            AstKind::ArrayDef { .. } => {
-                format!("{}ArrayDef({})", pad, self.span.get_str())
-            }
-            AstKind::String(_) => {
-                format!("{}String({})", pad, self.span.get_str())
-            }
-            AstKind::Breakpoint => {
-                format!("{}Breakpoint", pad)
-            }
-            AstKind::While { cond, body } => {
-                format!("{}While ({}) {}", pad, cond.pretty(0), body.pretty(0))
-            }
-        }
-    }
-
     pub fn get_span(&self) -> Span<'ip> {
         self.span.clone()
     }

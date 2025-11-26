@@ -365,14 +365,48 @@ impl<'ip> Parser<'ip> {
         let lhs = self.parse_unary()?;
 
         if let Some(Ok(next)) = self.peek() {
-            if matches!(next.kind, TokenKind::Assign) {
-                self.bump()?; // eq token
-                let rhs = self.parse_expression()?;
-                self.consume_line_end()?;
-                return Ok(self.gen_node(AstKind::Reassign {
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                }));
+            // if matches!(next.kind, TokenKind::Assign) {
+            //     self.bump()?; // eq token
+            //     let rhs = self.parse_expression()?;
+            //     self.consume_line_end()?;
+            //     return Ok(self.gen_node(AstKind::Reassign {
+            //         lhs: Box::new(lhs),
+            //         rhs: Box::new(rhs),
+            //     }));
+            // }
+
+            match &next.kind {
+                TokenKind::Assign => {
+                    self.bump()?; // eq token
+                    let rhs = self.parse_expression()?;
+                    self.consume_line_end()?;
+                    return Ok(self.gen_node(AstKind::Reassign {
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    }));
+                }
+
+                TokenKind::PlusAssign
+                | TokenKind::MinusAssign
+                | TokenKind::StarAssign
+                | TokenKind::SlashAssign
+                | TokenKind::ModAssign
+                | TokenKind::BandAssign
+                | TokenKind::BorAssign
+                | TokenKind::XorAssign
+                | TokenKind::ShlAssign
+                | TokenKind::ShrAssign => {
+                    let tok = self.bump()?; // token
+                    let rhs = self.parse_expression()?;
+                    self.consume_line_end()?;
+                    return Ok(self.gen_node(AstKind::UpdateAssign {
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                        op: tok,
+                    }));
+                }
+
+                _ => {}
             }
         }
 
