@@ -283,6 +283,65 @@ impl<'ip> Compiler {
                 let sub_instrs = self.gen_bin_op(&left, &op, &right)?;
                 instrs.extend(sub_instrs)
             }
+            TypedAstKind::UpdateAssign { left, op, right } => {
+                // 1. generate eval of lhs (value)
+                let lhs_val = self.gen_instrs(left)?; // leaves lhs value on stack
+                instrs.extend(lhs_val);
+
+                // 2. generate eval of rhs (value)
+                let rhs_val = self.gen_instrs(right)?; // leaves rhs value on stack
+                instrs.extend(rhs_val);
+
+                // 3. generate binary operation (consumes two top stack values)
+                let sub_instrs = self.gen_bin_op(left, op, right)?;
+                instrs.extend(sub_instrs);
+
+                // 4. store result back into lhs
+                match &left.kind {
+                    TypedAstKind::Identifier(ident_kind) => {
+                        let ofst = if let TokenKind::Identifier(ref ident) = ident_kind {
+                            if let Some(ofst) = self.lookup_local_slot(ident) {
+                                ofst
+                            } else {
+                                return Err(CompilerError::UndefinedIdentifier(left.get_span()));
+                            }
+                        } else {
+                            unreachable!()
+                        };
+
+                        instrs.push(Instr::Str(FP, ofst));
+                    }
+
+                    TypedAstKind::Deref(inner) => {
+                        // evaluate address
+                        let addr = self.gen_instrs(inner)?;
+                        instrs.extend(addr);
+                        instrs.push(Instr::Stw);
+                    }
+
+                    TypedAstKind::Index {
+                        lhs: indexed,
+                        rhs: idx,
+                    } => {
+                        // compute array element address
+                        instrs.extend(self.gen_instrs(indexed)?);
+                        instrs.extend(self.gen_instrs(idx)?);
+                        instrs.extend([
+                            Instr::Push(left.eval_ty.get_size() as u16),
+                            Instr::Mul,
+                            Instr::Add,
+                        ]);
+
+                        if left.eval_ty.get_size() == 1 {
+                            instrs.push(Instr::Stb);
+                        } else {
+                            instrs.push(Instr::Stw);
+                        }
+                    }
+
+                    _ => unreachable!("check_reassign_lhs already ensures only valid LHS occur"),
+                }
+            }
             TypedAstKind::Identifier(kind) => {
                 if let TokenKind::Identifier(ref name) = kind {
                     if let Some(ofst) = self.lookup_local_slot(name) {

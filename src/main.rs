@@ -60,7 +60,7 @@ fn compile_source(code: &str, dump_tokens: bool, dump_ast: bool) -> Result<Vec<u
         .map_err(|e| e.to_string())?;
 
     if dump_ast {
-        println!("{}", ast.pretty(0));
+        println!("{:#?}", ast);
         return Ok(Vec::new());
     }
 

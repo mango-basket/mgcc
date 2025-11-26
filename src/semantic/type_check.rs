@@ -894,9 +894,9 @@ impl<'ip> TypeChecker {
 
         Ok(TypedAstNode::new(
             TypedAstKind::UpdateAssign {
-                lhs: Box::new(lhs_typed),
+                left: Box::new(lhs_typed),
                 op: op.clone(),
-                rhs: Box::new(rhs_typed),
+                right: Box::new(rhs_typed),
             },
             ast.get_span(),
             Type::Unit,

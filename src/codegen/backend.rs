@@ -11,8 +11,8 @@ use crate::{
 fn reg(num: u8) -> String {
     match num {
         0..=7 => format!("r{num}"),
-        8 => format!("sp"),
-        9 => format!("fp"),
+        8 => "sp".to_string(),
+        9 => "fp".to_string(),
         _ => unreachable!(),
     }
 }
