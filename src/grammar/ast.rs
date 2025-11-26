@@ -36,9 +36,9 @@ pub enum TypedAstKind<'ip> {
         rhs: Box<TypedAstNode<'ip>>,
     },
     UpdateAssign {
-        lhs: Box<TypedAstNode<'ip>>,
+        left: Box<TypedAstNode<'ip>>,
         op: Token<'ip>,
-        rhs: Box<TypedAstNode<'ip>>,
+        right: Box<TypedAstNode<'ip>>,
     },
     Statements(Vec<TypedAstNode<'ip>>),
     Items(Vec<TypedAstNode<'ip>>),

@@ -98,7 +98,8 @@ impl<'a> SemanticChecker<'a> {
                 Ok(())
             }
             TypedAstKind::UnaryOp { operand, .. } => self.check(&operand),
-            TypedAstKind::BinaryOp { left, right, .. } => {
+            TypedAstKind::BinaryOp { left, right, .. }
+            | TypedAstKind::UpdateAssign { left, right, .. } => {
                 self.check(&left)?;
                 self.check(&right)
             }
