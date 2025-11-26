@@ -857,29 +857,8 @@ impl<'ip> TypeChecker {
         // ensure lhs is assignable (ident, deref, index)
         self.check_reassign_lhs(lhs)?;
 
-        // map update-op to underlying binary op
-        let mapped_op = match op.kind {
-            TokenKind::PlusAssign => TokenKind::Plus,
-            TokenKind::MinusAssign => TokenKind::Minus,
-            TokenKind::StarAssign => TokenKind::Star,
-            TokenKind::SlashAssign => TokenKind::Slash,
-            TokenKind::ModAssign => TokenKind::Mod,
-            TokenKind::BandAssign => TokenKind::Band,
-            TokenKind::BorAssign => TokenKind::Bor,
-            TokenKind::XorAssign => TokenKind::Xor,
-            TokenKind::ShlAssign => TokenKind::Shl,
-            TokenKind::ShrAssign => TokenKind::Shr,
-            _ => {
-                return Err(CompilerError::OpTypeError {
-                    op: op.clone(),
-                    lhs: Some(lhs_typed.eval_ty.clone()),
-                    rhs: rhs_typed.eval_ty.clone(),
-                })
-            }
-        };
-
         // check that "lhs <mapped_op> rhs" is valid (don't use the result, just validate)
-        let ty = Self::check_binop_compatibility(op, &lhs_typed, &rhs_typed)?;
+        let ty = Self::check_binop_compatibility(&op, &lhs_typed, &rhs_typed)?;
 
         if ty != lhs_typed.eval_ty {
             return Err(CompilerError::UnexpectedType {
@@ -1186,6 +1165,12 @@ impl<'ip> TypeChecker {
             | (TokenKind::Mod, Type::Int, Type::Int)
             | (TokenKind::Slash, Type::Int, Type::Int) => Ok(Type::Int),
 
+            (TokenKind::PlusAssign, Type::Int, Type::Int)
+            | (TokenKind::MinusAssign, Type::Int, Type::Int)
+            | (TokenKind::StarAssign, Type::Int, Type::Int)
+            | (TokenKind::ModAssign, Type::Int, Type::Int)
+            | (TokenKind::SlashAssign, Type::Int, Type::Int) => Ok(Type::Int),
+
             // equality
             (TokenKind::Eq, l, r) if l == r => Ok(Type::Bool),
             (TokenKind::Neq, l, r) if l == r => Ok(Type::Bool),
@@ -1210,10 +1195,17 @@ impl<'ip> TypeChecker {
             | (TokenKind::Bor, Type::Int, Type::Int)
             | (TokenKind::Xor, Type::Int, Type::Int) => Ok(Type::Int),
 
+            (TokenKind::BandAssign, Type::Int, Type::Int)
+            | (TokenKind::BorAssign, Type::Int, Type::Int)
+            | (TokenKind::XorAssign, Type::Int, Type::Int) => Ok(Type::Int),
+
             // shifts
             (TokenKind::Shl, Type::Int, Type::Int) | (TokenKind::Shr, Type::Int, Type::Int) => {
                 Ok(Type::Int)
             }
+
+            (TokenKind::ShlAssign, Type::Int, Type::Int)
+            | (TokenKind::ShrAssign, Type::Int, Type::Int) => Ok(Type::Int),
 
             _ => Err(CompilerError::OpTypeError {
                 op: op.clone(),

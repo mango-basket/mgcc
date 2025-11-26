@@ -729,11 +729,11 @@ impl<'ip> Compiler {
         instrs.extend(self.gen_instrs(right)?);
         match op.kind {
             // Arithmetic
-            TokenKind::Plus => instrs.push(Instr::Add),
-            TokenKind::Minus => instrs.push(Instr::Sub),
-            TokenKind::Star => instrs.push(Instr::Mul),
-            TokenKind::Slash => instrs.push(Instr::Div),
-            TokenKind::Mod => instrs.push(Instr::Mod),
+            TokenKind::Plus | TokenKind::PlusAssign => instrs.push(Instr::Add),
+            TokenKind::Minus | TokenKind::MinusAssign => instrs.push(Instr::Sub),
+            TokenKind::Star | TokenKind::StarAssign => instrs.push(Instr::Mul),
+            TokenKind::Slash | TokenKind::SlashAssign => instrs.push(Instr::Div),
+            TokenKind::Mod | TokenKind::ModAssign => instrs.push(Instr::Mod),
 
             // Comparison
             TokenKind::Eq
@@ -744,11 +744,11 @@ impl<'ip> Compiler {
             | TokenKind::Gte => instrs.extend(self.gen_comparison(&op.kind)),
 
             // Logical + bitwisw
-            TokenKind::And | TokenKind::Band => instrs.push(Instr::And),
-            TokenKind::Or | TokenKind::Bor => instrs.push(Instr::Or),
-            TokenKind::Xor => instrs.push(Instr::Xor),
-            TokenKind::Shl => instrs.push(Instr::Shl),
-            TokenKind::Shr => instrs.push(Instr::Shr),
+            TokenKind::And | TokenKind::Band | TokenKind::BandAssign => instrs.push(Instr::And),
+            TokenKind::Or | TokenKind::Bor | TokenKind::BorAssign => instrs.push(Instr::Or),
+            TokenKind::Xor | TokenKind::XorAssign => instrs.push(Instr::Xor),
+            TokenKind::Shl | TokenKind::ShlAssign => instrs.push(Instr::Shl),
+            TokenKind::Shr | TokenKind::ShrAssign => instrs.push(Instr::Shr),
 
             _ => {
                 return Err(CompilerError::UnexpectedToken {
