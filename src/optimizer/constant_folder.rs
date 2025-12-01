@@ -1,18 +1,18 @@
 use crate::error::{CompilerError, CompilerResult};
 use crate::grammar::ast::{TypedAstKind, TypedAstNode};
+use crate::semantic::type_check::Type;
 use crate::tokenizer::token::TokenKind;
 
 /*
 What ASTKinds can apply for constant folding?
-- UnaryOp
-- BinaryOp
-- As
+- [x] UnaryOp
+- [x] BinaryOp
+- [x] As
 
 What ASTKinds are constants/literals?
 - Int
 - Bool
 - Char
-- String
 */
 
 fn fold<'ip>(ast: &mut Box<TypedAstNode<'ip>>) -> CompilerResult<'ip, ()> {
@@ -319,6 +319,44 @@ fn fold<'ip>(ast: &mut Box<TypedAstNode<'ip>>) -> CompilerResult<'ip, ()> {
 
                 (_, _, _) => return Ok(()),
             };
+        }
+
+        TypedAstKind::As { ref mut lhs, rhs } => {
+            fold(lhs)?;
+
+            *ast = match (&lhs.kind, rhs) {
+                // Int as Char
+                (TypedAstKind::Int(TokenKind::Int(lit)), Type::Char) => {
+                    Box::new(TypedAstNode::new(
+                        TypedAstKind::Char(TokenKind::Char(*lit as u8)),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    ))
+                }
+
+                // Bool as Int
+                (TypedAstKind::Bool(TokenKind::Bool(lit)), Type::Int) => {
+                    Box::new(TypedAstNode::new(
+                        TypedAstKind::Int(TokenKind::Int(*lit as u16)),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    ))
+                }
+
+                // Char as Int
+                (TypedAstKind::Char(TokenKind::Char(lit)), Type::Int) => {
+                    Box::new(TypedAstNode::new(
+                        TypedAstKind::Int(TokenKind::Int(*lit as u16)),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    ))
+                }
+
+                (_, _) => return Ok(()),
+            }
         }
 
         _ => return Ok(()),
