@@ -7,6 +7,7 @@ mod error;
 mod grammar;
 mod semantic;
 mod tokenizer;
+mod optimizer;
 
 use clap::{CommandFactory, Parser};
 use tokenizer::lexer::Lexer;
