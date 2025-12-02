@@ -5,9 +5,9 @@ use std::io::{self, stdin, stdout, Write};
 mod codegen;
 mod error;
 mod grammar;
+mod optimizer;
 mod semantic;
 mod tokenizer;
-mod optimizer;
 
 use clap::{CommandFactory, Parser};
 use tokenizer::lexer::Lexer;
@@ -15,6 +15,7 @@ use tokenizer::lexer::Lexer;
 use crate::{
     codegen::backend::{gen_asm, gen_instrs},
     grammar::parser,
+    optimizer::fold,
     semantic::{analyzer::check_semantics, type_check::check_types},
 };
 
@@ -65,7 +66,8 @@ fn compile_source(code: &str, dump_tokens: bool, dump_ast: bool) -> Result<Vec<u
         return Ok(Vec::new());
     }
 
-    let (typed_ast, funcs) = check_types(&ast).map_err(|e| e.to_string())?;
+    let (mut typed_ast, funcs) = check_types(&ast).map_err(|e| e.to_string())?;
+    fold(&mut typed_ast).map_err(|e| e.to_string())?;
     check_semantics(&typed_ast, &funcs).map_err(|e| e.to_string())?;
     let (instrs, data) = gen_instrs(&typed_ast, funcs).map_err(|e| e.to_string())?;
 
