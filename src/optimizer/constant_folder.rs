@@ -126,6 +126,18 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                     )
                 }
 
+                // Int +/- 0
+                (
+                    TokenKind::Plus | TokenKind::Minus,
+                    TypedAstKind::Int(lit),
+                    TypedAstKind::Int(0),
+                ) => TypedAstNode::new(
+                    TypedAstKind::Int(*lit),
+                    ast.get_span(),
+                    ast.eval_ty.clone(),
+                    ast.ret.clone(),
+                ),
+
                 // Int - Int
                 (TokenKind::Minus, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
                     TypedAstNode::new(
