@@ -341,6 +341,17 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                     )
                 }
 
+                // Bool && false = false && Bool = false
+                (TokenKind::And, TypedAstKind::Bool(lit), TypedAstKind::Bool(false))
+                | (TokenKind::And, TypedAstKind::Bool(false), TypedAstKind::Bool(lit)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(false),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
+
                 // Bool || Bool
                 (TokenKind::And, TypedAstKind::Bool(lit1), TypedAstKind::Bool(lit2)) => {
                     TypedAstNode::new(
