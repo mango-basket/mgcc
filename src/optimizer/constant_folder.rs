@@ -352,6 +352,17 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                     )
                 }
 
+                // Bool && true = true && Bool = Bool
+                (TokenKind::And, TypedAstKind::Bool(lit), TypedAstKind::Bool(true))
+                | (TokenKind::And, TypedAstKind::Bool(true), TypedAstKind::Bool(lit)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(*lit),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
+
                 // Bool || Bool
                 (TokenKind::And, TypedAstKind::Bool(lit1), TypedAstKind::Bool(lit2)) => {
                     TypedAstNode::new(
@@ -367,6 +378,17 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                 | (TokenKind::And, TypedAstKind::Bool(true), TypedAstKind::Bool(lit)) => {
                     TypedAstNode::new(
                         TypedAstKind::Bool(true),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
+
+                // Bool || false = false || Bool = Bool
+                (TokenKind::Or, TypedAstKind::Bool(lit), TypedAstKind::Bool(false))
+                | (TokenKind::Or, TypedAstKind::Bool(false), TypedAstKind::Bool(lit)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(*lit),
                         ast.get_span(),
                         ast.eval_ty.clone(),
                         ast.ret.clone(),
