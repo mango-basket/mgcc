@@ -13,9 +13,9 @@ pub enum RetStatus {
 #[derive(Debug, Clone)]
 pub enum TypedAstKind<'ip> {
     Identifier(TokenKind),
-    Int(TokenKind),
-    Bool(TokenKind),
-    Char(TokenKind),
+    Int(u16),
+    Bool(bool),
+    Char(u8),
     Ref(Box<TypedAstNode<'ip>>),
     Deref(Box<TypedAstNode<'ip>>),
     UnaryOp {

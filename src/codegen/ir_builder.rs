@@ -239,13 +239,7 @@ impl<'ip> Compiler {
         let mut instrs = Vec::new();
 
         match &ast.kind {
-            TypedAstKind::Int(kind) => {
-                if let TokenKind::Int(num) = kind {
-                    instrs.push(Instr::Push(*num))
-                } else {
-                    unreachable!()
-                }
-            }
+            TypedAstKind::Int(num) => instrs.push(Instr::Push(*num)),
             TypedAstKind::String(kind) => {
                 if let TokenKind::String(_) = kind {
                     let name = format!("__str_{}", self.data_counter);
@@ -257,13 +251,7 @@ impl<'ip> Compiler {
                     unreachable!()
                 }
             }
-            TypedAstKind::Char(kind) => {
-                if let TokenKind::Char(ch) = kind {
-                    instrs.push(Instr::Push(*ch as u16))
-                } else {
-                    unreachable!()
-                }
-            }
+            TypedAstKind::Char(ch) => instrs.push(Instr::Push(*ch as u16)),
             TypedAstKind::UnaryOp { op, operand } => {
                 instrs.extend(self.gen_instrs(&operand)?);
                 match op.kind {
@@ -353,13 +341,7 @@ impl<'ip> Compiler {
                     unreachable!();
                 }
             }
-            TypedAstKind::Bool(kind) => {
-                if let TokenKind::Bool(bool) = kind {
-                    instrs.push(Instr::Push(*bool as u16));
-                } else {
-                    unreachable!()
-                }
-            }
+            TypedAstKind::Bool(bool) => instrs.push(Instr::Push(*bool as u16)),
             TypedAstKind::VarDef { name, rhs } => {
                 // locals are already allocated
                 let slot = self

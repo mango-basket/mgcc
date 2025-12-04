@@ -25,25 +25,25 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
 
             *ast = match (&op.kind, &operand.kind) {
                 // Negative and positive integers
-                (TokenKind::Minus, TypedAstKind::Int(TokenKind::Int(lit))) => TypedAstNode::new(
-                    TypedAstKind::Int(TokenKind::Int((!lit).wrapping_add(1))),
+                (TokenKind::Minus, TypedAstKind::Int(lit)) => TypedAstNode::new(
+                    TypedAstKind::Int((!lit).wrapping_add(1)),
                     ast.get_span(),
                     ast.eval_ty.clone(),
                     ast.ret.clone(),
                 ),
-                (TokenKind::Plus, TypedAstKind::Int(TokenKind::Int(lit))) => *operand.clone(),
+                (TokenKind::Plus, TypedAstKind::Int(lit)) => *operand.clone(),
 
                 // Logical not
-                (TokenKind::Not, TypedAstKind::Bool(TokenKind::Bool(lit))) => TypedAstNode::new(
-                    TypedAstKind::Bool(TokenKind::Bool(!lit)),
+                (TokenKind::Not, TypedAstKind::Bool(lit)) => TypedAstNode::new(
+                    TypedAstKind::Bool(!lit),
                     ast.get_span(),
                     ast.eval_ty.clone(),
                     ast.ret.clone(),
                 ),
 
                 // Bitwise not
-                (TokenKind::Bnot, TypedAstKind::Int(TokenKind::Int(lit))) => TypedAstNode::new(
-                    TypedAstKind::Int(TokenKind::Int(!lit)),
+                (TokenKind::Bnot, TypedAstKind::Int(lit)) => TypedAstNode::new(
+                    TypedAstKind::Int(!lit),
                     ast.get_span(),
                     ast.eval_ty.clone(),
                     ast.ret.clone(),
@@ -62,48 +62,38 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
 
             *ast = match (&op.kind, &left.kind, &right.kind) {
                 // Int + Int
-                (
-                    TokenKind::Plus,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Int(TokenKind::Int(lit1.wrapping_add(*lit2))),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::Plus, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Int(lit1.wrapping_add(*lit2)),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Int - Int
-                (
-                    TokenKind::Minus,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Int(TokenKind::Int(lit1.wrapping_sub(*lit2))),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::Minus, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Int(lit1.wrapping_sub(*lit2)),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Int * Int
-                (
-                    TokenKind::Star,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Int(TokenKind::Int(lit1.wrapping_mul(*lit2))),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::Star, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Int(lit1.wrapping_mul(*lit2)),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Int / Int
                 // check for zeroes
-                (
-                    TokenKind::Slash,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => {
+                (TokenKind::Slash, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
                     if *lit2 == 0 {
                         return Err(CompilerError::Semantic {
                             err: format!("cannot divide by 0"),
@@ -112,7 +102,7 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                     }
 
                     TypedAstNode::new(
-                        TypedAstKind::Int(TokenKind::Int(lit1.wrapping_div(*lit2))),
+                        TypedAstKind::Int(lit1.wrapping_div(*lit2)),
                         ast.get_span(),
                         ast.eval_ty.clone(),
                         ast.ret.clone(),
@@ -120,11 +110,7 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                 }
 
                 // Int % Int
-                (
-                    TokenKind::Mod,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => {
+                (TokenKind::Mod, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
                     if *lit2 == 0 {
                         return Err(CompilerError::Semantic {
                             err: format!("cannot divide by 0"),
@@ -133,7 +119,7 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                     }
 
                     TypedAstNode::new(
-                        TypedAstKind::Int(TokenKind::Int(lit1.rem_euclid(*lit2))),
+                        TypedAstKind::Int(lit1.rem_euclid(*lit2)),
                         ast.get_span(),
                         ast.eval_ty.clone(),
                         ast.ret.clone(),
@@ -143,169 +129,175 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                 // Lit is Int | Bool | Char
                 // I can rely on typechecker to make sure they are compatible
 
-                // Lit == Lit
-                (
-                    TokenKind::Eq,
-                    TypedAstKind::Int(kind1)
-                    | TypedAstKind::Bool(kind1)
-                    | TypedAstKind::Char(kind1),
-                    TypedAstKind::Int(kind2)
-                    | TypedAstKind::Bool(kind2)
-                    | TypedAstKind::Char(kind2),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Bool(TokenKind::Bool(kind1 == kind2)),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                // int == int
+                (TokenKind::Eq, TypedAstKind::Int(kind1), TypedAstKind::Int(kind2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(kind1 == kind2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
-                // Lit != Lit
-                (
-                    TokenKind::Neq,
-                    TypedAstKind::Int(kind1)
-                    | TypedAstKind::Bool(kind1)
-                    | TypedAstKind::Char(kind1),
-                    TypedAstKind::Int(kind2)
-                    | TypedAstKind::Bool(kind2)
-                    | TypedAstKind::Char(kind2),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Bool(TokenKind::Bool(kind1 != kind2)),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                // bool == bool
+                (TokenKind::Eq, TypedAstKind::Bool(kind1), TypedAstKind::Bool(kind2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(kind1 == kind2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
+
+                // char == char
+                (TokenKind::Eq, TypedAstKind::Char(kind1), TypedAstKind::Char(kind2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(kind1 == kind2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
+
+                // int != int
+                (TokenKind::Neq, TypedAstKind::Int(kind1), TypedAstKind::Int(kind2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(kind1 != kind2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
+
+                // bool != bool
+                (TokenKind::Neq, TypedAstKind::Bool(kind1), TypedAstKind::Bool(kind2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(kind1 != kind2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
+
+                // char != char
+                (TokenKind::Neq, TypedAstKind::Char(kind1), TypedAstKind::Char(kind2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(kind1 != kind2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Int < Int
-                (
-                    TokenKind::Lt,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Bool(TokenKind::Bool(lit1 < lit2)),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::Lt, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(lit1 < lit2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Int <= Int
-                (
-                    TokenKind::Lte,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Bool(TokenKind::Bool(lit1 <= lit2)),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::Lte, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(lit1 <= lit2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Int > Int
-                (
-                    TokenKind::Gt,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Bool(TokenKind::Bool(lit1 >= lit2)),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::Gt, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(lit1 >= lit2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Int >= Int
-                (
-                    TokenKind::Gte,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Bool(TokenKind::Bool(lit1 >= lit2)),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::Gte, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(lit1 >= lit2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Bool && Bool
-                (
-                    TokenKind::And,
-                    TypedAstKind::Bool(TokenKind::Bool(lit1)),
-                    TypedAstKind::Bool(TokenKind::Bool(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Bool(TokenKind::Bool(*lit1 && *lit2)),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::And, TypedAstKind::Bool(lit1), TypedAstKind::Bool(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(*lit1 && *lit2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Bool || Bool
-                (
-                    TokenKind::And,
-                    TypedAstKind::Bool(TokenKind::Bool(lit1)),
-                    TypedAstKind::Bool(TokenKind::Bool(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Bool(TokenKind::Bool(*lit1 || *lit2)),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::And, TypedAstKind::Bool(lit1), TypedAstKind::Bool(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Bool(*lit1 || *lit2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Int & Int
-                (
-                    TokenKind::Band,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Int(TokenKind::Int(lit1 & lit2)),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::Band, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Int(lit1 & lit2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Int | Int
-                (
-                    TokenKind::Bor,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Int(TokenKind::Int(lit1 | lit2)),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::Bor, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Int(lit1 | lit2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Int ^ Int
-                (
-                    TokenKind::Xor,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Int(TokenKind::Int(lit1 ^ lit2)),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::Xor, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Int(lit1 ^ lit2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Int << Int
-                (
-                    TokenKind::Shl,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Int(TokenKind::Int(lit1 << lit2)),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::Shl, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Int(lit1 << lit2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 // Int >> Int
-                (
-                    TokenKind::Shr,
-                    TypedAstKind::Int(TokenKind::Int(lit1)),
-                    TypedAstKind::Int(TokenKind::Int(lit2)),
-                ) => TypedAstNode::new(
-                    TypedAstKind::Int(TokenKind::Int(lit1 >> lit2)),
-                    ast.get_span(),
-                    ast.eval_ty.clone(),
-                    ast.ret.clone(),
-                ),
+                (TokenKind::Shr, TypedAstKind::Int(lit1), TypedAstKind::Int(lit2)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Int(lit1 >> lit2),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
 
                 (_, _, _) => return Ok(()),
             };
@@ -315,9 +307,9 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
 
             *ast = match (&lhs.kind, rhs) {
                 // Int as Char
-                (TypedAstKind::Int(TokenKind::Int(lit)), Type::Char) => {
+                (TypedAstKind::Int(lit), Type::Char) => {
                     (TypedAstNode::new(
-                        TypedAstKind::Char(TokenKind::Char(*lit as u8)),
+                        TypedAstKind::Char(*lit as u8),
                         ast.get_span(),
                         ast.eval_ty.clone(),
                         ast.ret.clone(),
@@ -325,9 +317,9 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                 }
 
                 // Bool as Int
-                (TypedAstKind::Bool(TokenKind::Bool(lit)), Type::Int) => {
+                (TypedAstKind::Bool(lit), Type::Int) => {
                     (TypedAstNode::new(
-                        TypedAstKind::Int(TokenKind::Int(*lit as u16)),
+                        TypedAstKind::Int(*lit as u16),
                         ast.get_span(),
                         ast.eval_ty.clone(),
                         ast.ret.clone(),
@@ -335,9 +327,9 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                 }
 
                 // Char as Int
-                (TypedAstKind::Char(TokenKind::Char(lit)), Type::Int) => {
+                (TypedAstKind::Char(lit), Type::Int) => {
                     (TypedAstNode::new(
-                        TypedAstKind::Int(TokenKind::Int(*lit as u16)),
+                        TypedAstKind::Int(*lit as u16),
                         ast.get_span(),
                         ast.eval_ty.clone(),
                         ast.ret.clone(),
