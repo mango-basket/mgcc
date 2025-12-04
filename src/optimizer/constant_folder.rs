@@ -213,6 +213,21 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                     )
                 }
 
+                // Int *|/|% 1 and 1 * INt
+                (
+                    TokenKind::Star | TokenKind::Slash | TokenKind::Mod,
+                    TypedAstKind::Int(lit),
+                    TypedAstKind::Int(1),
+                )
+                | (TokenKind::Star, TypedAstKind::Int(1), TypedAstKind::Int(lit)) => {
+                    TypedAstNode::new(
+                        TypedAstKind::Int(0),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
+                }
+
                 // Lit is Int | Bool | Char
                 // I can rely on typechecker to make sure they are compatible
 
