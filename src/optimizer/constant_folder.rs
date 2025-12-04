@@ -1,7 +1,7 @@
 use crate::error::{CompilerError, CompilerResult};
 use crate::grammar::ast::{TypedAstKind, TypedAstNode};
 use crate::semantic::type_check::Type;
-use crate::tokenizer::token::TokenKind;
+use crate::tokenizer::token::{Token, TokenKind};
 
 /*
 What ASTKinds can apply for constant folding?
@@ -33,6 +33,37 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                 ),
                 (TokenKind::Plus, TypedAstKind::Int(lit)) => *operand.clone(),
 
+                (
+                    outer @ (TokenKind::Plus | TokenKind::Minus),
+                    TypedAstKind::UnaryOp {
+                        op:
+                            Token {
+                                kind: inner @ (TokenKind::Plus | TokenKind::Minus),
+                                ..
+                            },
+                        operand,
+                    },
+                ) => {
+                    // only simplify if inner operand is an int literal
+                    if let TypedAstKind::Int(num) = operand.kind {
+                        let result = if inner == outer {
+                            num // --x or ++x
+                        } else {
+                            (!num).wrapping_add(1) // +-x or -+x
+                        };
+
+                        TypedAstNode::new(
+                            TypedAstKind::Int(result),
+                            ast.get_span(),
+                            ast.eval_ty.clone(),
+                            ast.ret.clone(),
+                        )
+                    } else {
+                        // nothing to fold, return ast as-is
+                        return Ok(());
+                    }
+                }
+
                 // Logical not
                 (TokenKind::Not, TypedAstKind::Bool(lit)) => TypedAstNode::new(
                     TypedAstKind::Bool(!lit),
@@ -40,6 +71,30 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                     ast.eval_ty.clone(),
                     ast.ret.clone(),
                 ),
+
+                // Chaining logical not
+                (
+                    TokenKind::Not,
+                    TypedAstKind::UnaryOp {
+                        op:
+                            Token {
+                                kind: TokenKind::Not,
+                                ..
+                            },
+                        operand,
+                    },
+                ) => {
+                    if let TypedAstKind::Bool(bool) = operand.kind {
+                        TypedAstNode::new(
+                            TypedAstKind::Bool(!bool),
+                            ast.get_span(),
+                            ast.eval_ty.clone(),
+                            ast.ret.clone(),
+                        )
+                    } else {
+                        return Ok(());
+                    }
+                }
 
                 // Bitwise not
                 (TokenKind::Bnot, TypedAstKind::Int(lit)) => TypedAstNode::new(
