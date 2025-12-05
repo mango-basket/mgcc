@@ -44,24 +44,34 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                         operand,
                     },
                 ) => {
-                    // only simplify if inner operand is an int literal
-                    if let TypedAstKind::Int(num) = operand.kind {
-                        let result = if inner == outer {
-                            num // --x or ++x
-                        } else {
-                            (!num).wrapping_add(1) // +-x or -+x
-                        };
-
-                        TypedAstNode::new(
-                            TypedAstKind::Int(result),
-                            ast.get_span(),
-                            ast.eval_ty.clone(),
-                            ast.ret.clone(),
-                        )
-                    } else {
-                        // nothing to fold, return ast as-is
+                    // only handle integer-typed expressions
+                    if operand.eval_ty != Type::Int {
                         return Ok(());
                     }
+
+                    let new_op_kind = if inner == outer {
+                        // ++x or --x → remove both signs
+                        // result becomes just the operand expression
+                        // only do this by replacing the whole node
+                        *ast = (**operand).clone();
+                        return Ok(());
+                    } else {
+                        // +-x or -+x → becomes just -x
+                        TokenKind::Minus
+                    };
+
+                    TypedAstNode::new(
+                        TypedAstKind::UnaryOp {
+                            op: Token {
+                                kind: new_op_kind,
+                                span: op.span.clone(),
+                            },
+                            operand: operand.clone(),
+                        },
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
                 }
 
                 // Logical not
@@ -84,16 +94,17 @@ pub fn fold<'ip>(ast: &mut TypedAstNode<'ip>) -> CompilerResult<'ip, ()> {
                         operand,
                     },
                 ) => {
-                    if let TypedAstKind::Bool(bool) = operand.kind {
-                        TypedAstNode::new(
-                            TypedAstKind::Bool(!bool),
-                            ast.get_span(),
-                            ast.eval_ty.clone(),
-                            ast.ret.clone(),
-                        )
-                    } else {
+                    // only handle bool
+                    if operand.eval_ty != Type::Bool {
                         return Ok(());
                     }
+
+                    TypedAstNode::new(
+                        operand.kind.clone(),
+                        ast.get_span(),
+                        ast.eval_ty.clone(),
+                        ast.ret.clone(),
+                    )
                 }
 
                 // Bitwise not

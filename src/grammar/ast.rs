@@ -272,9 +272,9 @@ impl<'ip> AstNode<'ip> {
 #[derive(Debug, Clone)]
 pub enum AstKind<'ip> {
     Identifier(TokenKind),
-    Int(TokenKind),
-    Bool(TokenKind),
-    Char(TokenKind),
+    Int(u16),
+    Bool(bool),
+    Char(u8),
     Ref(Box<AstNode<'ip>>),
     Deref(Box<AstNode<'ip>>),
     UnaryOp {

@@ -623,9 +623,9 @@ impl<'ip> Parser<'ip> {
         let token = self.bump()?;
 
         match token.kind {
-            TokenKind::Int(_) => Ok(self.gen_node(AstKind::Int(token.kind))),
-            TokenKind::Bool(_) => Ok(self.gen_node(AstKind::Bool(token.kind))),
-            TokenKind::Char(_) => Ok(self.gen_node(AstKind::Char(token.kind))),
+            TokenKind::Int(num) => Ok(self.gen_node(AstKind::Int(num))),
+            TokenKind::Bool(bl) => Ok(self.gen_node(AstKind::Bool(bl))),
+            TokenKind::Char(ch) => Ok(self.gen_node(AstKind::Char(ch))),
             TokenKind::String(_) => Ok(self.gen_node(AstKind::String(token.kind))),
             TokenKind::Identifier(_) => self.parse_func_call(&token),
 
