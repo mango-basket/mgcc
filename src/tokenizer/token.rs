@@ -99,7 +99,7 @@ pub struct Span<'ip> {
 impl<'ip> fmt::Debug for Span<'ip> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let snippet = &self.input[self.start..self.end];
-        f.debug_struct("Slice")
+        f.debug_struct("Span")
             .field("start", &self.start)
             .field("end", &self.end)
             .field("text", &snippet)
@@ -137,6 +137,35 @@ impl<'ip> Span<'ip> {
         }
 
         format!("{}:{}", row, col)
+    }
+
+    pub fn merge(&self, other: &Span) -> Span<'ip> {
+        Span {
+            start: self.start.min(other.start),
+            end: self.end.max(other.end),
+            input: self.input,
+        }
+    }
+
+    // optional convenience for multiple spans
+    pub fn merge_many(spans: &[Span<'ip>]) -> Span<'ip> {
+        let mut start = usize::MAX;
+        let mut end = 0;
+        let mut input = "";
+
+        for s in spans {
+            if s.start < start {
+                start = s.start;
+            }
+
+            if s.end > end {
+                end = s.end;
+            }
+
+            input = s.input;
+        }
+
+        Span { start, end, input }
     }
 }
 

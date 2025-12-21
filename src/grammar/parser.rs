@@ -53,7 +53,7 @@ pub struct Parser<'ip> {
     lexer: Peekable<Lexer<'ip>>,
     buffer: VecDeque<CompilerResult<'ip, Token<'ip>>>,
     pos: isize,
-    slice_stack: Vec<usize>,
+    span_stack: Vec<usize>,
     input: &'ip str,
 }
 
@@ -62,7 +62,7 @@ impl<'ip> Parser<'ip> {
         Self {
             lexer: lexer.peekable(),
             buffer: VecDeque::new(),
-            slice_stack: Vec::new(),
+            span_stack: Vec::new(),
             pos: -1,
             input,
         }
@@ -81,14 +81,14 @@ impl<'ip> Parser<'ip> {
 
     pub fn start_span(&mut self) -> CompilerResult<'ip, ()> {
         if let Some(Ok(tok)) = self.peek().cloned() {
-            self.slice_stack.push(tok.span.start);
+            self.span_stack.push(tok.span.start);
         }
 
         Ok(())
     }
 
     pub fn gen_node(&mut self, kind: AstKind<'ip>) -> AstNode<'ip> {
-        let start = self.slice_stack.pop().expect("slice stack is empty");
+        let start = self.span_stack.pop().expect("slice stack is empty");
         let end = self.pos as usize;
         AstNode::new(kind, Span::new(start, end, self.input))
     }
@@ -172,7 +172,10 @@ impl<'ip> Parser<'ip> {
             }
         }
 
-        Ok(self.gen_node(AstKind::Items(items)))
+        Ok(AstNode {
+            kind: AstKind::Items(items.clone()),
+            span: AstNode::span_from_children(&items, self.input),
+        })
     }
 
     fn parse_item(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
@@ -233,12 +236,18 @@ impl<'ip> Parser<'ip> {
 
                     expect_match!(self, TokenKind::Rbrace)?;
 
-                    return Ok(self.gen_node(AstKind::Func {
-                        name,
-                        params,
-                        ret,
-                        body: Box::new(body),
-                    }));
+                    let start = name.span.start; // start of `fn main`
+                    let end = body.span.end; // end of last statement or Rbrace
+
+                    return Ok(AstNode::new(
+                        AstKind::Func {
+                            name,
+                            params,
+                            ret,
+                            body: Box::new(body),
+                        },
+                        Span::new(start, end, self.input),
+                    ));
                 }
                 _ => {
                     return Err(CompilerError::UnexpectedToken {
@@ -248,6 +257,7 @@ impl<'ip> Parser<'ip> {
                 }
             }
         }
+
         Err(CompilerError::UnexpectedEof)
     }
 
@@ -266,7 +276,10 @@ impl<'ip> Parser<'ip> {
             }
         }
 
-        Ok(self.gen_node(AstKind::Statements(stmts)))
+        Ok(AstNode {
+            kind: AstKind::Statements(stmts.clone()),
+            span: AstNode::span_from_children(&stmts, self.input),
+        })
     }
 
     fn parse_type(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
@@ -529,11 +542,15 @@ impl<'ip> Parser<'ip> {
             self.next_if(|tok| matches!(tok, x if operators.contains(&x.kind)))
         {
             let sub = subparser(self)?;
-            node = self.gen_node(AstKind::BinaryOp {
-                left: Box::new(node),
-                op: tok,
-                right: Box::new(sub),
-            });
+            let span = Span::merge(&node.get_span(), &sub.get_span());
+            node = AstNode::new(
+                AstKind::BinaryOp {
+                    left: Box::new(node),
+                    op: tok,
+                    right: Box::new(sub),
+                },
+                span,
+            );
         }
 
         Ok(node)
@@ -636,7 +653,7 @@ impl<'ip> Parser<'ip> {
                 let expr = self.parse_expression()?;
 
                 // pop off excess slice
-                self.slice_stack.pop().expect("slice stack is empty");
+                self.span_stack.pop().expect("slice stack is empty");
 
                 expect_match!(self, TokenKind::Rparen)?;
                 Ok(expr)
@@ -790,7 +807,7 @@ impl<'ip> Parser<'ip> {
             return Err(CompilerError::Semantic {
                 err: "zero-length arrays are not allowed".into(),
                 span: Span {
-                    start: self.slice_stack.pop().unwrap(),
+                    start: self.span_stack.pop().unwrap(),
                     end: self.pos as usize,
                     input: self.input,
                 },

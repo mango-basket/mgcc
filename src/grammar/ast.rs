@@ -378,4 +378,10 @@ impl<'ip> AstNode<'ip> {
     pub fn get_span(&self) -> Span<'ip> {
         self.span.clone()
     }
+
+    pub fn span_from_children(children: &[AstNode<'ip>], input: &'ip str) -> Span<'ip> {
+        let start = children.first().map(|c| c.span.start).unwrap_or(0);
+        let end = children.last().map(|c| c.span.end).unwrap_or(0);
+        Span::new(start, end, input)
+    }
 }

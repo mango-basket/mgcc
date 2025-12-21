@@ -15,7 +15,7 @@ What ASTKinds are constants/literals?
 - Char
 */
 
-pub fn fold<'ip>(ast: &'ip TypedAstNode<'ip>) -> CompilerResult<'ip, TypedAstNode> {
+pub fn fold<'ip>(ast: &'ip TypedAstNode<'ip>) -> CompilerResult<'ip, TypedAstNode<'ip>> {
     match &ast.kind {
         // unary ops
         TypedAstKind::UnaryOp { op, operand } => {
@@ -56,6 +56,7 @@ pub fn fold<'ip>(ast: &'ip TypedAstNode<'ip>) -> CompilerResult<'ip, TypedAstNod
                 return Ok(new);
             }
             if let Some(new) = try_constant_fold(op, &folded_left, &folded_right, ast)? {
+                dbg!(&new);
                 return Ok(new);
             }
             if let Some(new) = try_algebraic_simplify(op, &folded_left, &folded_right, ast)? {
@@ -331,8 +332,8 @@ pub fn fold<'ip>(ast: &'ip TypedAstNode<'ip>) -> CompilerResult<'ip, TypedAstNod
 
 fn try_algebraic_simplify<'ip>(
     op: &Token<'ip>,
-    left: &'ip TypedAstNode<'ip>,
-    right: &'ip TypedAstNode<'ip>,
+    left: &TypedAstNode<'ip>,
+    right: &TypedAstNode<'ip>,
     ast: &TypedAstNode<'ip>,
 ) -> CompilerResult<'ip, Option<TypedAstNode<'ip>>> {
     match (
@@ -482,12 +483,12 @@ fn try_constant_fold<'ip>(
     }
 }
 
-fn try_short_circuit(
-    op: &Token,
-    left: &TypedAstNode,
-    right: &TypedAstNode,
-    ast: &TypedAstNode,
-) -> Option<TypedAstNode> {
+fn try_short_circuit<'ip>(
+    op: &Token<'ip>,
+    left: &TypedAstNode<'ip>,
+    right: &TypedAstNode<'ip>,
+    ast: &'ip TypedAstNode<'ip>,
+) -> Option<TypedAstNode<'ip>> {
     match (&op.kind, &left.kind) {
         (TokenKind::And, TypedAstKind::Bool(false)) => Some(mk_bool(false, ast)),
         (TokenKind::And, TypedAstKind::Bool(true)) => Some(right.clone()),
