@@ -164,7 +164,7 @@ impl<'ip> Parser<'ip> {
                         return Err(CompilerError::UnexpectedEof);
                     }
                 }
-                Some(Ok(tok)) if Some(tok.clone().kind) == end => break, // stop at `}`
+                Some(Ok(tok)) if Some(tok.clone().kind) == end => break, // stop at `eof`
                 Some(Ok(tok)) if matches!(tok.kind, TokenKind::LineEnd) => {
                     self.consume_line_end()?
                 }
