@@ -56,7 +56,6 @@ pub fn fold<'ip>(ast: &'ip TypedAstNode<'ip>) -> CompilerResult<'ip, TypedAstNod
                 return Ok(new);
             }
             if let Some(new) = try_constant_fold(op, &folded_left, &folded_right, ast)? {
-                dbg!(&new);
                 return Ok(new);
             }
             if let Some(new) = try_algebraic_simplify(op, &folded_left, &folded_right, ast)? {

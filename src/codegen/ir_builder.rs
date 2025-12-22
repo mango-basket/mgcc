@@ -550,7 +550,6 @@ impl<'ip> Compiler {
                 // prologue
                 let ofst = self.cur_func_ctx().fp_offset;
                 if ofst != 0 {
-                    dbg!(ofst);
                     instrs.extend([
                         Instr::Pushr(FP),   // save old FP
                         Instr::Mov(FP, SP), // set new FP = SP
