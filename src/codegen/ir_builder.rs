@@ -548,31 +548,37 @@ impl<'ip> Compiler {
                     .expect("semantic run guarantees existence of function");
 
                 // prologue
-                instrs.extend([
-                    Instr::Pushr(FP),   // save old FP
-                    Instr::Mov(FP, SP), // set new FP = SP
-                ]);
-
-                // allocate locals
-                // find biggest local offset
                 let ofst = self.cur_func_ctx().fp_offset;
-                instrs.extend([
-                    Instr::Push((ofst as i16) as u16),
-                    Instr::Pushr(FP),
-                    Instr::Add,
-                    Instr::Popr(SP),
-                ]);
+                if ofst != 0 {
+                    dbg!(ofst);
+                    instrs.extend([
+                        Instr::Pushr(FP),   // save old FP
+                        Instr::Mov(FP, SP), // set new FP = SP
+                    ]);
 
-                // body
+                    // allocate locals
+                    // find biggest local offset
+                    instrs.extend([
+                        Instr::Push((ofst as i16) as u16),
+                        Instr::Pushr(FP),
+                        Instr::Add,
+                        Instr::Popr(SP),
+                    ]);
+
+                    // body
+                }
+
                 instrs.extend(self.gen_instrs(&body)?);
 
-                // default epilogue (in case no explicit return)
-                instrs.extend([
-                    Instr::Mov(SP, FP), // pop locals
-                    Instr::Popr(FP),    // restore old FP
-                    Instr::Ret,         // return
-                ]);
+                if ofst != 0 {
+                    // default epilogue (in case no explicit return)
+                    instrs.extend([
+                        Instr::Mov(SP, FP), // pop locals
+                        Instr::Popr(FP),    // restore old FP
+                    ]);
+                }
 
+                instrs.push(Instr::Ret);
                 self.exit_function();
             }
             TypedAstKind::Return(expr_opt) => {
