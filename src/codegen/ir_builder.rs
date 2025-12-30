@@ -354,6 +354,15 @@ impl<'ip> Compiler {
             TypedAstKind::Statements(asts) => {
                 for ast in asts {
                     instrs.extend(self.gen_instrs(&ast)?);
+
+                    // if its not unit, reset stack pointer
+                    if ast.eval_ty != Type::Unit {
+                        instrs.extend([
+                            Instr::Pushr(SP),
+                            Instr::AddI(ast.eval_ty.get_size() as u16),
+                            Instr::Popr(SP),
+                        ]);
+                    }
                 }
             }
             TypedAstKind::Reassign { lhs, rhs } => match &lhs.kind {
