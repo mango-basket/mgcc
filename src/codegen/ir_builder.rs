@@ -272,19 +272,9 @@ impl<'ip> Compiler {
                 instrs.extend(sub_instrs)
             }
             TypedAstKind::UpdateAssign { left, op, right } => {
-                // 1. generate eval of lhs (value)
-                let lhs_val = self.gen_instrs(left)?; // leaves lhs value on stack
-                instrs.extend(lhs_val);
-
-                // 2. generate eval of rhs (value)
-                let rhs_val = self.gen_instrs(right)?; // leaves rhs value on stack
-                instrs.extend(rhs_val);
-
-                // 3. generate binary operation (consumes two top stack values)
                 let sub_instrs = self.gen_bin_op(left, op, right)?;
                 instrs.extend(sub_instrs);
 
-                // 4. store result back into lhs
                 match &left.kind {
                     TypedAstKind::Identifier(ident_kind) => {
                         let ofst = if let TokenKind::Identifier(ref ident) = ident_kind {
