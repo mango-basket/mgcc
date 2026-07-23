@@ -74,13 +74,14 @@ pub enum TypedAstKind<'ip> {
         rhs: Box<TypedAstNode<'ip>>,
     },
     Array(Vec<TypedAstNode<'ip>>),
-    ArrayDef {
+ArrayDef {
         size: Token<'ip>,
         ty: Type,
     },
     String(TokenKind), // var a[4];
     Breakpoint,
     Module(Token<'ip>),
+    Use(Token<'ip>),
 }
 
 #[derive(Debug, Clone)]
@@ -338,13 +339,14 @@ pub enum AstKind<'ip> {
         rhs: Box<AstNode<'ip>>,
     },
     Array(Vec<AstNode<'ip>>),
-    ArrayDef {
+ArrayDef {
         size: Option<Token<'ip>>,
         ty: Box<AstNode<'ip>>,
     },
     String(TokenKind),
     Breakpoint,
     Module(Token<'ip>),
+    Use(Token<'ip>),
 }
 
 impl<'ip> TypedAstKind<'ip> {
@@ -375,6 +377,7 @@ impl<'ip> TypedAstKind<'ip> {
             While { .. } => false,
             UpdateAssign { .. } => false,
             Module(_) => true,
+            Use(_) => true,
         }
     }
 }

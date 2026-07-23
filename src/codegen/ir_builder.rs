@@ -704,6 +704,7 @@ impl<'ip> Compiler {
             }
             TypedAstKind::Breakpoint => instrs.push(Instr::Bkpt),
             TypedAstKind::Module(_) => {}
+            TypedAstKind::Use(_) => {}
         }
 
         Ok(instrs)

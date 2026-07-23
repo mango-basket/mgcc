@@ -203,12 +203,25 @@ impl<'ip> Parser<'ip> {
         Ok(self.gen_node(AstKind::Module(name)))
     }
 
+    fn parse_use(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        self.start_span()?;
+        expect_match!(self, TokenKind::Keyword(Keyword::Use))?;
+        let name = expect_match!(self, TokenKind::Identifier(_))?;
+        if matches!(self.peek_kind(), Some(TokenKind::LineEnd)) {
+            self.consume_line_end()?;
+        }
+        Ok(self.gen_node(AstKind::Use(name)))
+    }
+
     fn parse_item(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
         self.start_span()?;
         if let Some(Ok(tok)) = self.peek() {
             match tok.kind {
                 TokenKind::Keyword(Keyword::Module) => {
                     return self.parse_module();
+                }
+                TokenKind::Keyword(Keyword::Use) => {
+                    return self.parse_use();
                 }
                 TokenKind::Keyword(Keyword::Export) => {
                     expect_match!(self, TokenKind::Keyword(Keyword::Export))?;

@@ -75,6 +75,7 @@ fn walk_for_exports(ast: &TypedAstNode<'_>, out: &mut Vec<String>) {
             }
         }
         TypedAstKind::Module(_) => {}
+        TypedAstKind::Use(_) => {}
         _ => {}
     }
 }

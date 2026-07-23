@@ -328,7 +328,9 @@ pub fn fold<'ip>(ast: &'ip TypedAstNode<'ip>) -> CompilerResult<'ip, TypedAstNod
         | TypedAstKind::ArrayDef { .. }
         | TypedAstKind::Breakpoint
         | TypedAstKind::String(_)
-        | TypedAstKind::Continue => Ok(ast.clone()),
+        | TypedAstKind::Continue
+        | TypedAstKind::Module(_)
+        | TypedAstKind::Use(_) => Ok(ast.clone()),
 
         _ => Ok(ast.clone()),
     }

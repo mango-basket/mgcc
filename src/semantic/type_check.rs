@@ -7,6 +7,64 @@ use crate::{
     tokenizer::token::{Span, Token, TokenKind},
 };
 
+#[derive(Debug)]
+struct ParsedExport {
+    name_ofst: u16,
+    ret_ofst: u16,
+    first_param_ofst: u16,
+    param_count: u16,
+}
+
+#[derive(Debug)]
+struct ParsedParam {
+    name_ofst: u16,
+    type_ofst: u16,
+}
+
+#[derive(Debug)]
+struct ParsedMetadata {
+    _name_ofst: u16,
+    export_table: Vec<ParsedExport>,
+    param_table: Vec<ParsedParam>,
+    string_pool: StringPool,
+}
+
+#[derive(Debug)]
+struct StringPool {
+    strings: Vec<String>,
+    offsets: std::collections::HashMap<String, u16>,
+}
+
+impl StringPool {
+    fn from_bytes(data: &[u8]) -> Self {
+        let mut strings = Vec::new();
+        let mut offsets = std::collections::HashMap::new();
+        let mut start = 0;
+
+        for (i, &b) in data.iter().enumerate() {
+            if b == 0 {
+                let s = String::from_utf8_lossy(&data[start..i]).into_owned();
+                offsets.insert(s.clone(), start as u16);
+                strings.push(s);
+                start = i + 1;
+            }
+        }
+
+        Self { strings, offsets }
+    }
+
+    fn resolve(&self, offset: u16) -> &str {
+        for s in &self.strings {
+            if let Some(&off) = self.offsets.get(s) {
+                if off == offset {
+                    return s;
+                }
+            }
+        }
+        ""
+    }
+}
+
 #[derive(Copy, Clone)]
 pub enum ExprContext {
     Expr,
@@ -71,7 +129,15 @@ impl Type {
                     .collect::<String>(),
                 ret.to_string()
             ),
-            Type::Array(inner, size) => format!("{}[{:?}]", inner.to_string(), size),
+            Type::Array(inner, size) => format!(
+                "[{}{}]",
+                inner.to_string(),
+                if let Some(s) = size {
+                    format!(", {}", s)
+                } else {
+                    String::new()
+                }
+            ),
         }
     }
 
@@ -119,6 +185,9 @@ pub fn check_types<'ip>(
         expr_ctx: ExprContext::Expr,
     };
 
+    // First pass: process imports
+    type_checker.process_imports(&ast)?;
+
     let typed = type_checker.infer_type(&ast)?;
     Ok((typed, type_checker.functions))
 }
@@ -132,6 +201,240 @@ pub struct TypeChecker {
 }
 
 impl<'ip> TypeChecker {
+    pub fn process_imports(&mut self, ast: &'ip AstNode<'ip>) -> CompilerResult<'ip, ()> {
+        self.walk_imports(ast)
+    }
+
+    fn walk_imports(&mut self, node: &'ip AstNode<'ip>) -> CompilerResult<'ip, ()> {
+        match &node.kind {
+            AstKind::Items(items) | AstKind::Statements(items) => {
+                for item in items {
+                    self.walk_imports(item)?;
+                }
+            }
+            AstKind::Use(name) => {
+                let module_name = name.span.get_str();
+                self.load_module(module_name, name.span.clone())?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn load_module(&mut self, module_name: &str, span: Span<'ip>) -> CompilerResult<'ip, ()> {
+        // Search for module: first CWD, then MANGO_PATH
+        let mut search_paths = Vec::new();
+
+        // Add CWD first
+        if let Ok(cwd) = std::env::current_dir() {
+            search_paths.push(cwd);
+        }
+
+        // Then add MANGO_PATH
+        if let Ok(paths) = std::env::var("MANGO_PATH") {
+            for path in paths.split(':') {
+                if !path.is_empty() {
+                    search_paths.push(std::path::PathBuf::from(path));
+                }
+            }
+        }
+
+        let mut found = false;
+        for path in search_paths {
+            let mobj_path = path.join(format!("{}.mobj", module_name));
+            if mobj_path.exists() {
+                self.load_mobj_metadata(&mobj_path, module_name, span.clone())?;
+                found = true;
+                break;
+            }
+        }
+
+        if !found {
+            return Err(CompilerError::Semantic {
+                err: format!("module '{}' not found in MANGO_PATH", module_name),
+                span,
+            });
+        }
+
+        Ok(())
+    }
+
+    fn load_mobj_metadata(
+        &mut self,
+        mobj_path: &std::path::Path,
+        module_name: &str,
+        span: Span<'ip>,
+    ) -> CompilerResult<'ip, ()> {
+        let bytes = std::fs::read(mobj_path).map_err(|_| CompilerError::Semantic {
+            err: format!("could not read MOBJ file: {}", mobj_path.display()),
+            span: span.clone(),
+        })?;
+
+        if bytes.len() < 6 || &bytes[0..4] != b"MOBJ" {
+            return Err(CompilerError::Semantic {
+                err: format!("invalid MOBJ file: {}", mobj_path.display()),
+                span,
+            });
+        }
+
+        let version = u16::from_le_bytes([bytes[4], bytes[5]]);
+        if version < 3 {
+            return Err(CompilerError::Semantic {
+                err: format!("MOBJ file version {} too old (requires 3+)", version),
+                span,
+            });
+        }
+
+        if bytes.len() < 16 {
+            return Err(CompilerError::Semantic {
+                err: "MOBJ file too small".to_string(),
+                span,
+            });
+        }
+
+        let read_u16 = |offset: usize| -> u16 {
+            u16::from_le_bytes([bytes[offset], bytes[offset + 1]])
+        };
+
+        let instr_bytes_len = read_u16(6) as usize;
+        let data_bytes_len = read_u16(8) as usize;
+        let symtable_len = read_u16(10) as usize;
+        let reloctable_len = read_u16(12) as usize;
+        let meta_len = read_u16(14) as usize;
+
+        if meta_len == 0 {
+            return Err(CompilerError::Semantic {
+                err: format!("module '{}' has no metadata", module_name),
+                span,
+            });
+        }
+
+        let meta_start = 16 + instr_bytes_len + data_bytes_len + symtable_len + reloctable_len;
+        let meta_end = meta_start + meta_len;
+
+        if meta_end > bytes.len() {
+            return Err(CompilerError::Semantic {
+                err: "metadata section extends beyond file".to_string(),
+                span,
+            });
+        }
+
+        let metadata = self.parse_metadata(&bytes[meta_start..meta_end], module_name, span.clone())?;
+
+        // Add imported functions to type_env
+        for export in metadata.export_table {
+            let name = metadata.string_pool.resolve(export.name_ofst);
+            let ret_type = self.parse_type_str(metadata.string_pool.resolve(export.ret_ofst))?;
+
+            let mut params = Vec::new();
+            for i in 0..export.param_count {
+                let idx = export.first_param_ofst as usize + i as usize;
+                if idx >= metadata.param_table.len() {
+                    break;
+                }
+                let param = &metadata.param_table[idx];
+                let ptype = self.parse_type_str(metadata.string_pool.resolve(param.type_ofst))?;
+                params.push(ptype);
+            }
+
+            // Add to type_env
+            self.type_env.insert(name.to_string(), Type::Fn { params: params.clone(), ret: Box::new(ret_type.clone()) });
+
+            // Add to functions map for codegen
+            let fn_sig = FnSignature { params, ret: ret_type };
+            let ctx = FunctionContext {
+                symbols: HashMap::new(),
+                fp_offset: 0,
+                signature: fn_sig,
+                param_names: Vec::new(),
+            };
+            self.functions.insert(name.to_string(), ctx);
+        }
+
+        Ok(())
+    }
+
+    fn parse_metadata(
+        &self,
+        data: &[u8],
+        module_name: &str,
+        span: Span<'ip>,
+    ) -> CompilerResult<'ip, ParsedMetadata> {
+        if data.len() < 8 {
+            return Err(CompilerError::Semantic {
+                err: "metadata section too small".to_string(),
+                span,
+            });
+        }
+
+        let read_u16 = |offset: usize| -> u16 {
+            u16::from_le_bytes([data[offset], data[offset + 1]])
+        };
+
+        let name_ofst = read_u16(0);
+        let _dependency_count = read_u16(2);
+        let export_count = read_u16(4);
+        let param_count = read_u16(6);
+
+        let mut pos = 8;
+
+        let mut dependency_table = Vec::new();
+        for _ in 0.._dependency_count {
+            dependency_table.push(read_u16(pos));
+            pos += 2;
+        }
+
+        let mut export_table = Vec::new();
+        for _ in 0..export_count {
+            let e = ParsedExport {
+                name_ofst: read_u16(pos),
+                ret_ofst: read_u16(pos + 2),
+                first_param_ofst: read_u16(pos + 4),
+                param_count: read_u16(pos + 6),
+            };
+            export_table.push(e);
+            pos += 8;
+        }
+
+        let mut param_table = Vec::new();
+        for _ in 0..param_count {
+            param_table.push(ParsedParam {
+                name_ofst: read_u16(pos),
+                type_ofst: read_u16(pos + 2),
+            });
+            pos += 4;
+        }
+
+        let string_pool = StringPool::from_bytes(&data[pos..]);
+
+        Ok(ParsedMetadata {
+            _name_ofst: name_ofst,
+            export_table,
+            param_table,
+            string_pool,
+        })
+    }
+
+    fn parse_type_str(&self, s: &str) -> CompilerResult<'ip, Type> {
+        let s = s.trim();
+        if s.starts_with('[') && s.ends_with(']') {
+            let inner = &s[1..s.len()-1].trim();
+            let inner_type = self.parse_type_str(inner)?;
+            return Ok(Type::Array(Box::new(inner_type), None));
+        }
+        match s {
+            "int" => Ok(Type::Int),
+            "bool" => Ok(Type::Bool),
+            "char" => Ok(Type::Char),
+            "unit" | "void" => Ok(Type::Unit),
+            s if s.starts_with("ref ") => {
+                let inner = &s[4..];
+                Ok(Type::Ref(Box::new(self.parse_type_str(inner)?)))
+            }
+            _ => Err(CompilerError::TypeError(format!("unknown type: {}", s), Default::default())),
+        }
+    }
+
     pub fn add_local_to_current(&mut self, name: &str, ty: Type) -> Result<(), CompilerError<'ip>> {
         let func_name = self
             .cur_func
@@ -299,6 +602,12 @@ impl<'ip> TypeChecker {
             )),
             AstKind::Module(name) => Ok(TypedAstNode::new(
                 TypedAstKind::Module(name.clone()),
+                ast.get_span(),
+                Type::Unit,
+                RetStatus::Never,
+            )),
+            AstKind::Use(name) => Ok(TypedAstNode::new(
+                TypedAstKind::Use(name.clone()),
                 ast.get_span(),
                 Type::Unit,
                 RetStatus::Never,
