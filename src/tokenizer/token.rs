@@ -14,6 +14,8 @@ pub enum Keyword {
     As,
     Breakpoint,
     While,
+    Export,
+    Module,
 }
 
 impl Keyword {
@@ -30,6 +32,8 @@ impl Keyword {
             "return" => Some(Keyword::Return),
             "as" => Some(Keyword::As),
             "breakpoint" => Some(Keyword::Breakpoint),
+            "export" => Some(Keyword::Export),
+            "module" => Some(Keyword::Module),
             "while" => Some(Keyword::While),
             _ => None,
         }

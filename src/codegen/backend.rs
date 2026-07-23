@@ -100,7 +100,7 @@ fn resolve_alias(name: &str, aliases: &HashMap<String, String>) -> String {
     cur.to_string()
 }
 
-pub fn gen_asm(instrs: Vec<Instr>, data: HashMap<String, String>) -> String {
+pub fn gen_asm(instrs: Vec<Instr>, data: HashMap<String, String>, lib: bool) -> String {
     let mut code = String::new();
 
     code.push_str("@section data\n");
@@ -110,9 +110,13 @@ pub fn gen_asm(instrs: Vec<Instr>, data: HashMap<String, String>) -> String {
 
     code.push_str("@section text\n");
 
-    let mut prologue = vec![Instr::CallLbl("main".to_string()), Instr::Halt];
-
-    prologue.extend(instrs.clone());
+    let prologue = if lib {
+        instrs.clone()
+    } else {
+        let mut p = vec![Instr::CallLbl("main".to_string()), Instr::Halt];
+        p.extend(instrs.clone());
+        p
+    };
     let instrs = jmp_lbl_optimization(prologue);
 
     for instr in instrs {

@@ -16,10 +16,76 @@ pub struct SemanticChecker<'a> {
 pub fn check_semantics<'ip>(
     ast: &'ip TypedAstNode<'ip>,
     funcs: &HashMap<String, FunctionContext>,
+    lib: bool,
 ) -> CompilerResult<'ip, ()> {
     let mut checker = SemanticChecker::new(funcs);
     // checker.check_main()?;
-    checker.check(ast)
+    checker.check(ast)?;
+
+    let mut seen_module = false;
+    validate_lib_mode(ast, lib, &mut seen_module)?;
+
+    if lib && !seen_module {
+        return Err(CompilerError::Semantic {
+            err: "--lib compilation requires a module declaration at the top of the file"
+                .to_string(),
+            span: Span::new(0, 0, ""),
+        });
+    }
+
+    Ok(())
+}
+
+fn validate_lib_mode<'ip>(
+    ast: &'ip TypedAstNode<'ip>,
+    lib: bool,
+    seen_module: &mut bool,
+) -> CompilerResult<'ip, ()> {
+    match &ast.kind {
+        TypedAstKind::Module(name) => {
+            if !lib {
+                return Err(CompilerError::Semantic {
+                    err: "use of module/export requires the --lib flag".to_string(),
+                    span: name.span.clone(),
+                });
+            }
+            if *seen_module {
+                return Err(CompilerError::Semantic {
+                    err: "duplicate module declaration".to_string(),
+                    span: name.span.clone(),
+                });
+            }
+            *seen_module = true;
+        }
+        TypedAstKind::Func { is_export, name, .. } => {
+            if *is_export && !lib {
+                return Err(CompilerError::Semantic {
+                    err: "use of module/export requires the --lib flag".to_string(),
+                    span: name.span.clone(),
+                });
+            }
+        }
+        TypedAstKind::Items(items) | TypedAstKind::Statements(items) => {
+            for item in items {
+                validate_lib_mode(item, lib, seen_module)?;
+            }
+        }
+        TypedAstKind::IfElse {
+            ifbody,
+            elsebody,
+            ..
+        } => {
+            validate_lib_mode(ifbody, lib, seen_module)?;
+            if let Some(else_ast) = elsebody {
+                validate_lib_mode(else_ast, lib, seen_module)?;
+            }
+        }
+        TypedAstKind::Loop(body) | TypedAstKind::While { body, .. } => {
+            validate_lib_mode(body, lib, seen_module)?;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 impl<'a> SemanticChecker<'a> {
@@ -144,6 +210,7 @@ impl<'a> SemanticChecker<'a> {
             TypedAstKind::Array(_) => Ok(()),
             TypedAstKind::ArrayDef { .. } => Ok(()),
             TypedAstKind::Breakpoint => Ok(()),
+            TypedAstKind::Module(_) => Ok(()),
         }
     }
 }

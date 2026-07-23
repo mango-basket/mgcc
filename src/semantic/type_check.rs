@@ -214,6 +214,7 @@ impl<'ip> TypeChecker {
             symbols: HashMap::new(),
             fp_offset: initial_fp_offset as i8, // word size
             signature,
+            param_names: Vec::new(),
         };
 
         self.functions.insert(name.to_string(), ctx);
@@ -278,11 +279,12 @@ impl<'ip> TypeChecker {
             AstKind::Disp(inner) => self.check_disp(ast, inner),
             AstKind::Items(items) => self.check_items(ast, items),
             AstKind::Func {
+                is_export,
                 name,
                 params,
                 body,
                 ret,
-            } => self.check_func(ast, name, params, body, ret),
+            } => self.check_func(ast, *is_export, name, params, body, ret),
             AstKind::Return(ret_opt) => self.check_return(ast, ret_opt),
             AstKind::FuncCall { name, args } => self.check_func_call(ast, name, args),
             AstKind::As { lhs, rhs } => self.check_as(ast, lhs, rhs),
@@ -291,6 +293,12 @@ impl<'ip> TypeChecker {
             AstKind::ArrayDef { size, ty } => self.check_array_def(ast, size, ty),
             AstKind::Breakpoint => Ok(TypedAstNode::new(
                 TypedAstKind::Breakpoint,
+                ast.get_span(),
+                Type::Unit,
+                RetStatus::Never,
+            )),
+            AstKind::Module(name) => Ok(TypedAstNode::new(
+                TypedAstKind::Module(name.clone()),
                 ast.get_span(),
                 Type::Unit,
                 RetStatus::Never,
@@ -379,6 +387,7 @@ impl<'ip> TypeChecker {
     fn check_func(
         &mut self,
         node: &'ip AstNode<'ip>,
+        is_export: bool,
         name: &'ip Token<'_>,
         params: &'ip [(Token<'_>, AstNode<'_>)],
         body: &'ip AstNode<'_>,
@@ -410,6 +419,10 @@ impl<'ip> TypeChecker {
                 ret: ret_ty.clone(),
             },
         );
+        {
+            let ctx = self.functions.get_mut(name.span.get_str()).unwrap();
+            ctx.param_names = params_typed.iter().map(|(t, _)| t.span.get_str().to_string()).collect();
+        }
         self.enter_function(name.span.get_str())?;
 
         if ret_ty != Type::Unit {
@@ -460,6 +473,7 @@ impl<'ip> TypeChecker {
         // function definition itself evaluates to Unit
         Ok(TypedAstNode::new(
             TypedAstKind::Func {
+                is_export,
                 name: name.clone(),
                 body: Box::new(body_typed),
             },

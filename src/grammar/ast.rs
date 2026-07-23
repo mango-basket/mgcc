@@ -48,6 +48,7 @@ pub enum TypedAstKind<'ip> {
         elsebody: Option<Box<TypedAstNode<'ip>>>,
     },
     Func {
+        is_export: bool,
         name: Token<'ip>,
         body: Box<TypedAstNode<'ip>>,
     },
@@ -79,6 +80,7 @@ pub enum TypedAstKind<'ip> {
     },
     String(TokenKind), // var a[4];
     Breakpoint,
+    Module(Token<'ip>),
 }
 
 #[derive(Debug, Clone)]
@@ -308,6 +310,7 @@ pub enum AstKind<'ip> {
         elsebody: Option<Box<AstNode<'ip>>>,
     },
     Func {
+        is_export: bool,
         name: Token<'ip>,
         params: Vec<(Token<'ip>, AstNode<'ip>)>,
         body: Box<AstNode<'ip>>,
@@ -341,6 +344,7 @@ pub enum AstKind<'ip> {
     },
     String(TokenKind),
     Breakpoint,
+    Module(Token<'ip>),
 }
 
 impl<'ip> TypedAstKind<'ip> {
@@ -370,6 +374,7 @@ impl<'ip> TypedAstKind<'ip> {
             Index { .. } => false,
             While { .. } => false,
             UpdateAssign { .. } => false,
+            Module(_) => true,
         }
     }
 }

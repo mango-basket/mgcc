@@ -183,12 +183,17 @@ pub fn fold<'ip>(ast: &'ip TypedAstNode<'ip>) -> CompilerResult<'ip, TypedAstNod
         }
 
         // func body
-        TypedAstKind::Func { name, body } => {
+        TypedAstKind::Func {
+            name,
+            body,
+            is_export,
+        } => {
             let folded_body = fold(body)?;
             Ok(TypedAstNode::new(
                 TypedAstKind::Func {
                     name: name.clone(),
                     body: Box::new(folded_body),
+                    is_export: *is_export,
                 },
                 ast.get_span(),
                 ast.eval_ty.clone(),

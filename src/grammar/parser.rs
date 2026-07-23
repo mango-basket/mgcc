@@ -155,6 +155,21 @@ impl<'ip> Parser<'ip> {
         self.start_span()?;
         let mut items = Vec::new();
 
+        if end.is_none() {
+            while matches!(self.peek_kind(), Some(TokenKind::LineEnd)) {
+                self.consume_line_end()?;
+            }
+
+            if let Some(Ok(tok)) = self.peek() {
+                if matches!(tok.kind, TokenKind::Keyword(Keyword::Module)) {
+                    items.push(self.parse_module()?);
+                    while matches!(self.peek_kind(), Some(TokenKind::LineEnd)) {
+                        self.consume_line_end()?;
+                    }
+                }
+            }
+        }
+
         loop {
             match self.peek() {
                 None => {
@@ -178,10 +193,37 @@ impl<'ip> Parser<'ip> {
         })
     }
 
+    fn parse_module(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
+        self.start_span()?;
+        expect_match!(self, TokenKind::Keyword(Keyword::Module))?;
+        let name = expect_match!(self, TokenKind::Identifier(_))?;
+        if matches!(self.peek_kind(), Some(TokenKind::LineEnd)) {
+            self.consume_line_end()?;
+        }
+        Ok(self.gen_node(AstKind::Module(name)))
+    }
+
     fn parse_item(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
         self.start_span()?;
         if let Some(Ok(tok)) = self.peek() {
             match tok.kind {
+                TokenKind::Keyword(Keyword::Module) => {
+                    return self.parse_module();
+                }
+                TokenKind::Keyword(Keyword::Export) => {
+                    expect_match!(self, TokenKind::Keyword(Keyword::Export))?;
+                    let mut item = self.parse_item()?;
+
+                    match &mut item.kind {
+                        AstKind::Func { is_export, .. } => {
+                            *is_export = true;
+
+                            return Ok(item);
+                        }
+                        _ => unreachable!("export may only be applied to functions"),
+                    }
+                }
+
                 TokenKind::Keyword(Keyword::Fn) => {
                     // fn keyword
                     expect_match!(self, TokenKind::Keyword(Keyword::Fn))?;
@@ -241,6 +283,7 @@ impl<'ip> Parser<'ip> {
 
                     return Ok(AstNode::new(
                         AstKind::Func {
+                            is_export: false,
                             name,
                             params,
                             ret,

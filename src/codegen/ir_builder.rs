@@ -15,11 +15,12 @@ use crate::{
 
 type SymbolTable = HashMap<String, (Option<i8>, Type)>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionContext {
     pub symbols: SymbolTable,
     pub fp_offset: i8,
     pub signature: FnSignature,
+    pub param_names: Vec<String>,
 }
 
 pub struct Compiler {
@@ -539,7 +540,11 @@ impl<'ip> Compiler {
                     instrs.extend(self.gen_instrs(&ast)?);
                 }
             }
-            TypedAstKind::Func { name, body } => {
+            TypedAstKind::Func {
+                name,
+                body,
+                is_export,
+            } => {
                 let fname = name.span.get_str().to_string();
                 instrs.push(Instr::Lbl(fname.clone()));
 
@@ -698,6 +703,7 @@ impl<'ip> Compiler {
                 ]);
             }
             TypedAstKind::Breakpoint => instrs.push(Instr::Bkpt),
+            TypedAstKind::Module(_) => {}
         }
 
         Ok(instrs)
