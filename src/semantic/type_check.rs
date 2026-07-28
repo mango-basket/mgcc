@@ -754,7 +754,7 @@ impl<'ip> TypeChecker {
                     body.get_span(),
                 ));
             }
-            RetStatus::Always(ref ty) => {
+            RetStatus::Always(ty) => {
                 if *ty != ret_ty {
                     return Err(CompilerError::UnexpectedType {
                         got: ty.clone(),

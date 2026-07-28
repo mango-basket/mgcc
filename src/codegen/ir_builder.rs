@@ -279,7 +279,7 @@ impl<'ip> Compiler {
 
                 match &left.kind {
                     TypedAstKind::Identifier(ident_kind) => {
-                        let ofst = if let TokenKind::Identifier(ref ident) = ident_kind {
+                        let ofst = if let TokenKind::Identifier(ident) = ident_kind {
                             if let Some(ofst) = self.lookup_local_slot(ident) {
                                 ofst
                             } else {
@@ -323,7 +323,7 @@ impl<'ip> Compiler {
                 }
             }
             TypedAstKind::Identifier(kind) => {
-                if let TokenKind::Identifier(ref name) = kind {
+                if let TokenKind::Identifier(name) = kind {
                     if let Some(ofst) = self.lookup_local_slot(name) {
                         instrs.push(Instr::Ldr(FP, ofst));
                     } else {
@@ -359,7 +359,7 @@ impl<'ip> Compiler {
             }
             TypedAstKind::Reassign { lhs, rhs } => match &lhs.kind {
                 TypedAstKind::Identifier(ident_kind) => {
-                    let ofst = if let TokenKind::Identifier(ref ident) = ident_kind {
+                    let ofst = if let TokenKind::Identifier(ident) = ident_kind {
                         if let Some(ofst) = self.lookup_local_slot(ident) {
                             ofst
                         } else {
@@ -488,7 +488,7 @@ impl<'ip> Compiler {
                     .0
                     .clone(),
             )),
-            TypedAstKind::Break(ref opt_expr) => {
+            TypedAstKind::Break(opt_expr) => {
                 if let Some(expr) = opt_expr {
                     instrs.extend(self.gen_instrs(&expr)?);
                 };
@@ -507,9 +507,9 @@ impl<'ip> Compiler {
                 ));
             }
             TypedAstKind::Ref(inner) => {
-                match inner.kind {
-                    TypedAstKind::Identifier(ref ident_kind) => {
-                        if let TokenKind::Identifier(ref name) = ident_kind {
+                match &inner.kind {
+                    TypedAstKind::Identifier(ident_kind) => {
+                        if let TokenKind::Identifier(name) = ident_kind {
                             if let Some(slot) = self.lookup_local_slot(name) {
                                 instrs.push(Instr::Pushr(5)); // push fp onto stack
                                 instrs.push(Instr::Push(slot as u16)); // push addr rel to fp
@@ -523,7 +523,7 @@ impl<'ip> Compiler {
                             unreachable!();
                         }
                     }
-                    TypedAstKind::Deref(ref inner) => instrs.extend(self.gen_instrs(&inner)?),
+                    TypedAstKind::Deref(deref_inner) => instrs.extend(self.gen_instrs(deref_inner)?),
                     _ => unreachable!(),
                 }
             }
