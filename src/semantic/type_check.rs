@@ -303,10 +303,7 @@ impl<'ip> TypeChecker {
         let meta_len = read_u16(14) as usize;
 
         if meta_len == 0 {
-            return Err(CompilerError::Semantic {
-                err: format!("module '{}' has no metadata", module_name),
-                span,
-            });
+            return Ok(());
         }
 
         let meta_start = 16 + instr_bytes_len + data_bytes_len + symtable_len + reloctable_len;
@@ -983,7 +980,7 @@ impl<'ip> TypeChecker {
                     TypedAstKind::IfElse {
                         condition: Box::new(cond_typed),
                         ifbody: Box::new(if_typed.clone()),
-                        elsebody: None,
+                        elsebody: Some(Box::new(else_typed)),
                     },
                     node.get_span(),
                     if_typed.eval_ty,
