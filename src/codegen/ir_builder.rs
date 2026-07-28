@@ -30,6 +30,7 @@ pub struct Compiler {
     pub label_counter: usize,
     pub loop_stack: Vec<(String, String)>, // (loop head, loop end)
     pub cur_func: Option<String>,
+    pub exported_labels: std::collections::HashSet<String>,
 }
 
 impl<'ip> Compiler {
@@ -546,6 +547,9 @@ impl<'ip> Compiler {
                 is_export,
             } => {
                 let fname = name.span.get_str().to_string();
+                if *is_export {
+                    self.exported_labels.insert(fname.clone());
+                }
                 instrs.push(Instr::Lbl(fname.clone()));
 
                 self.enter_function(&fname)
@@ -553,12 +557,12 @@ impl<'ip> Compiler {
 
                 // prologue
                 let ofst = self.cur_func_ctx().fp_offset;
-                if ofst != 0 {
-                    instrs.extend([
-                        Instr::Pushr(FP),   // save old FP
-                        Instr::Mov(FP, SP), // set new FP = SP
-                    ]);
+                instrs.extend([
+                    Instr::Pushr(FP),   // save old FP
+                    Instr::Mov(FP, SP), // set new FP = SP
+                ]);
 
+                if ofst != 0 {
                     // allocate locals
                     // find biggest local offset
                     instrs.extend([
@@ -573,13 +577,11 @@ impl<'ip> Compiler {
 
                 instrs.extend(self.gen_instrs(&body)?);
 
-                if ofst != 0 {
-                    // default epilogue (in case no explicit return)
-                    instrs.extend([
-                        Instr::Mov(SP, FP), // pop locals
-                        Instr::Popr(FP),    // restore old FP
-                    ]);
-                }
+                // default epilogue (in case no explicit return)
+                instrs.extend([
+                    Instr::Mov(SP, FP), // pop locals
+                    Instr::Popr(FP),    // restore old FP
+                ]);
 
                 instrs.push(Instr::Ret);
                 self.exit_function();

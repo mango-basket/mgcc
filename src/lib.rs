@@ -47,11 +47,12 @@ pub fn extract_module_name(ast: &TypedAstNode<'_>) -> Option<String> {
     }
 }
 
+/// Compiles the code and spits out the assembly and the mif (optional)
 pub fn compile_source(
     code: &str,
     dump_tokens: bool,
     dump_ast: bool,
-    lib: bool,
+    is_lib: bool,
     module_name: &str,
 ) -> Result<(Vec<u8>, Option<String>), String> {
     let mut lexer = Lexer::new(code);
@@ -73,13 +74,14 @@ pub fn compile_source(
     }
 
     let (typed_ast, funcs) = check_types(&ast).map_err(|e| e.to_string())?;
-    check_semantics(&typed_ast, &funcs, lib).map_err(|e| e.to_string())?;
+    check_semantics(&typed_ast, &funcs, is_lib).map_err(|e| e.to_string())?;
     let folded_ast = fold(&typed_ast).map_err(|e| e.to_string())?;
-    let (instrs, data) = gen_instrs(&folded_ast, funcs.clone()).map_err(|e| e.to_string())?;
+    let (instrs, data, exported_labels) =
+        gen_instrs(&folded_ast, funcs.clone()).map_err(|e| e.to_string())?;
 
-    let asm = gen_asm(instrs, data, lib);
+    let asm = gen_asm(instrs, data, is_lib, exported_labels);
 
-    let mif = if lib {
+    let mif = if is_lib {
         let mod_name = extract_module_name(&folded_ast).unwrap_or_else(|| module_name.to_string());
         Some(gen_mif(&folded_ast, &funcs, &mod_name))
     } else {

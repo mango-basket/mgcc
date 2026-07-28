@@ -100,7 +100,12 @@ fn resolve_alias(name: &str, aliases: &HashMap<String, String>) -> String {
     cur.to_string()
 }
 
-pub fn gen_asm(instrs: Vec<Instr>, data: HashMap<String, String>, lib: bool) -> String {
+pub fn gen_asm(
+    instrs: Vec<Instr>,
+    data: HashMap<String, String>,
+    lib: bool,
+    exported_labels: std::collections::HashSet<String>,
+) -> String {
     let mut code = String::new();
 
     code.push_str("@section data\n");
@@ -135,7 +140,13 @@ pub fn gen_asm(instrs: Vec<Instr>, data: HashMap<String, String>, lib: bool) -> 
             Instr::Jlt(ofst) => format!("JLT16 {}", ofst),
             Instr::Jgt(ofst) => format!("JGT16 {}", ofst),
             Instr::Jeq(ofst) => format!("JEQ16 {}", ofst),
-            Instr::Lbl(id) => format!("\n{}:", id),
+            Instr::Lbl(id) => {
+                if exported_labels.contains(id.as_str()) {
+                    format!("\n@global\n{}:", id)
+                } else {
+                    format!("\n{}:", id)
+                }
+            }
             Instr::JmpLbl(id) => format!("JMP {}", id),
             Instr::JltLbl(id) => format!("JLT {}", id),
             Instr::JgtLbl(id) => format!("JGT {}", id),
@@ -184,7 +195,7 @@ pub fn gen_asm(instrs: Vec<Instr>, data: HashMap<String, String>, lib: bool) -> 
 pub fn gen_instrs<'ip>(
     ast: &'ip TypedAstNode<'ip>,
     functions: HashMap<String, FunctionContext>,
-) -> CompilerResult<'ip, (Vec<Instr>, HashMap<String, String>)> {
+) -> CompilerResult<'ip, (Vec<Instr>, HashMap<String, String>, std::collections::HashSet<String>)> {
     let mut compiler = Compiler {
         functions,
         label_counter: 0,
@@ -192,7 +203,9 @@ pub fn gen_instrs<'ip>(
         data_strings: HashMap::new(),
         loop_stack: Vec::new(),
         cur_func: None,
+        exported_labels: std::collections::HashSet::new(),
     };
 
-    Ok((compiler.gen_instrs(ast)?, compiler.data_strings))
+    let instrs = compiler.gen_instrs(ast)?;
+    Ok((instrs, compiler.data_strings, compiler.exported_labels))
 }

@@ -23,6 +23,14 @@ pub fn gen_mif(
     out.push_str(&format!("module {}\n", module_name));
     out.push('\n');
 
+    let deps = collect_dependencies(ast);
+    for dep in &deps {
+        out.push_str(&format!("depends {}\n", dep));
+    }
+    if !deps.is_empty() {
+        out.push('\n');
+    }
+
     let exports = collect_exports(ast);
 
     for name in &exports {
@@ -44,6 +52,26 @@ pub fn gen_mif(
     }
 
     out
+}
+
+fn collect_dependencies(ast: &TypedAstNode<'_>) -> Vec<String> {
+    let mut deps = Vec::new();
+    walk_for_dependencies(ast, &mut deps);
+    deps
+}
+
+fn walk_for_dependencies(ast: &TypedAstNode<'_>, out: &mut Vec<String>) {
+    match &ast.kind {
+        TypedAstKind::Items(items) | TypedAstKind::Statements(items) => {
+            for item in items {
+                walk_for_dependencies(item, out);
+            }
+        }
+        TypedAstKind::Use(name) => {
+            out.push(name.span.get_str().to_string());
+        }
+        _ => {}
+    }
 }
 
 fn collect_exports(ast: &TypedAstNode<'_>) -> Vec<String> {
