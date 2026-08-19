@@ -271,7 +271,19 @@ impl<'ip> Compiler {
             }
             TypedAstKind::BinaryOp { left, op, right } => {
                 let sub_instrs = self.gen_bin_op(&left, &op, &right)?;
-                instrs.extend(sub_instrs)
+                instrs.extend(sub_instrs);
+
+                // pointer difference: Ref(T) - Ref(T) -> divide by element size
+                if matches!(op.kind, TokenKind::Minus)
+                    && matches!(left.eval_ty, Type::Ref(_))
+                    && matches!(right.eval_ty, Type::Ref(_))
+                {
+                    let elem_size = match &left.eval_ty {
+                        Type::Ref(inner) => inner.get_size() as u16,
+                        _ => 2,
+                    };
+                    instrs.extend([Instr::Push(elem_size), Instr::Div]);
+                }
             }
             TypedAstKind::UpdateAssign { left, op, right } => {
                 let sub_instrs = self.gen_bin_op(left, op, right)?;
@@ -719,6 +731,26 @@ impl<'ip> Compiler {
 
         instrs.extend(self.gen_instrs(left)?);
         instrs.extend(self.gen_instrs(right)?);
+
+        // pointer arithmetic: multiply integer operand by element size
+        let is_ptr_arithmetic = matches!(left.eval_ty, Type::Ref(_))
+            && matches!(right.eval_ty, Type::Int)
+            && matches!(
+                op.kind,
+                TokenKind::Plus
+                    | TokenKind::Minus
+                    | TokenKind::PlusAssign
+                    | TokenKind::MinusAssign
+            );
+
+        if is_ptr_arithmetic {
+            let elem_size = match &left.eval_ty {
+                Type::Ref(inner) => inner.get_size() as u16,
+                _ => 2,
+            };
+            instrs.extend([Instr::Push(elem_size), Instr::Mul]);
+        }
+
         match op.kind {
             // Arithmetic
             TokenKind::Plus | TokenKind::PlusAssign => instrs.push(Instr::Add),

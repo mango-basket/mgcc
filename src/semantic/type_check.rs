@@ -1503,6 +1503,20 @@ impl<'ip> TypeChecker {
             | (TokenKind::ModAssign, Type::Int, Type::Int)
             | (TokenKind::SlashAssign, Type::Int, Type::Int) => Ok(Type::Int),
 
+            // pointer arithmetic: Ref(T) + Int -> Ref(T)
+            (TokenKind::Plus, Type::Ref(t), Type::Int)
+            | (TokenKind::Plus, Type::Int, Type::Ref(t)) => Ok(Type::Ref(t)),
+
+            // pointer arithmetic: Ref(T) - Int -> Ref(T)
+            (TokenKind::Minus, Type::Ref(t), Type::Int) => Ok(Type::Ref(t)),
+
+            // pointer difference: Ref(T) - Ref(T) -> Int
+            (TokenKind::Minus, Type::Ref(t1), Type::Ref(t2)) if t1 == t2 => Ok(Type::Int),
+
+            // compound pointer assignment: Ref(T) += Int, Ref(T) -= Int
+            (TokenKind::PlusAssign, Type::Ref(t), Type::Int)
+            | (TokenKind::MinusAssign, Type::Ref(t), Type::Int) => Ok(Type::Ref(t)),
+
             // equality
             (TokenKind::Eq, l, r) if l == r => Ok(Type::Bool),
             (TokenKind::Neq, l, r) if l == r => Ok(Type::Bool),
