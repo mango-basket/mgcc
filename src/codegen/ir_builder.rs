@@ -634,16 +634,13 @@ impl<'ip> Compiler {
             TypedAstKind::As { lhs, rhs } => {
                 instrs.extend(self.gen_instrs(lhs)?);
 
-                match rhs.to_string().as_str() {
-                    // if rhs is int, lhs is bool or char, both get reinterpretted
-                    "int" => {} // do nothing
-
-                    // if rhs is char, lhs has to be int
-                    // mask the high bits out
-                    "char" => {
+                match (lhs.eval_ty.clone(), rhs.clone()) {
+                    // int/bool/char -> char: mask low byte
+                    (Type::Int, Type::Char) | (Type::Bool, Type::Char) => {
                         instrs.extend([Instr::Push(0xFF), Instr::And]);
                     }
-                    _ => unreachable!("type checker guarantees `as` coersions"),
+                    // all other casts are no-ops (same size, binary compatible)
+                    _ => {}
                 }
             }
             TypedAstKind::Index { lhs, rhs } => {

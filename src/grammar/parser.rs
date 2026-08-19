@@ -344,6 +344,14 @@ impl<'ip> Parser<'ip> {
             match &tok.kind {
                 TokenKind::Ref => {
                     self.bump()?;
+                    if let Some(Ok(tok)) = self.peek() {
+                        if matches!(&tok.kind, TokenKind::Identifier(s) if s == "raw") {
+                            self.bump()?;
+                            return Ok(self.gen_node(AstKind::Identifier(
+                                TokenKind::Identifier("raw".to_string()),
+                            )));
+                        }
+                    }
                     let inner = self.parse_type()?;
                     Ok(self.gen_node(AstKind::Ref(Box::new(inner))))
                 }
@@ -613,7 +621,7 @@ impl<'ip> Parser<'ip> {
     }
 
     fn parse_as(&mut self) -> CompilerResult<'ip, AstNode<'ip>> {
-        // unary ("as" ident)+
+        // unary ("as" type)+
         self.start_span()?;
 
         let mut node = self.parse_unary()?;
@@ -621,11 +629,10 @@ impl<'ip> Parser<'ip> {
         while let Some(Ok(_)) =
             self.next_if(|tok| matches!(tok.kind, TokenKind::Keyword(Keyword::As)))
         {
-            // get an identifier
-            let ty = expect_match!(self, TokenKind::Identifier(_))?;
+            let ty = self.parse_type()?;
             node = self.gen_node(AstKind::As {
                 lhs: Box::new(node),
-                rhs: ty,
+                rhs: Box::new(ty),
             })
         }
 

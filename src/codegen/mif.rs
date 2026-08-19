@@ -9,6 +9,7 @@ use crate::{
 fn type_to_mif(ty: &Type) -> String {
     match ty {
         Type::Unit => "void".to_string(),
+        Type::Raw => "@raw".to_string(),
         other => other.to_string(),
     }
 }

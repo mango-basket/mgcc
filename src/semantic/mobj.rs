@@ -198,6 +198,7 @@ fn parse_type(s: &str) -> CompilerResult<'static, Type> {
         "unit" => Ok(Type::Unit),
         "void" => Ok(Type::Unit),
         "char" => Ok(Type::Char),
+        "raw" => Ok(Type::Raw),
         s if s.starts_with("ref ") => {
             let inner = s.trim_start_matches("ref ").trim();
             let inner_type = parse_type(inner)?;

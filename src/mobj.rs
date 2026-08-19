@@ -199,6 +199,7 @@ fn parse_type(s: &str) -> Type {
         "bool" => Type::Bool,
         "void" | "unit" => Type::Unit,
         "char" => Type::Char,
+        "raw" => Type::Raw,
         s if s.starts_with("ref ") => Type::Ref(Box::new(parse_type(&s[4..]))),
         s if s.contains("->") => {
             let (head, ret) = s.split_once("->").unwrap();

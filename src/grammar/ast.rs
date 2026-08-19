@@ -332,7 +332,7 @@ pub enum AstKind<'ip> {
     },
     As {
         lhs: Box<AstNode<'ip>>,
-        rhs: Token<'ip>,
+        rhs: Box<AstNode<'ip>>,
     },
     Index {
         lhs: Box<AstNode<'ip>>,

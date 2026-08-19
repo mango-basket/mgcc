@@ -84,6 +84,7 @@ pub enum Type {
     Bool,
     Unit,
     Char,
+    Raw,
     Ref(Box<Type>),
     Array(Box<Type>, Option<usize>),
     Fn { params: Vec<Type>, ret: Box<Type> },
@@ -96,6 +97,7 @@ impl PartialEq for Type {
             (Type::Bool, Type::Bool) => true,
             (Type::Unit, Type::Unit) => true,
             (Type::Char, Type::Char) => true,
+            (Type::Raw, Type::Raw) => true,
             (Type::Ref(inner1), Type::Ref(inner2)) => inner1 == inner2,
             (
                 Type::Fn {
@@ -120,6 +122,7 @@ impl Type {
             Type::Bool => "bool".to_string(),
             Type::Unit => "unit".to_string(),
             Type::Char => "char".to_string(),
+            Type::Raw => "@raw".to_string(),
             Type::Ref(inner) => format!("ref {}", inner.to_string()),
             Type::Fn { params, ret } => format!(
                 "fn ({}) -> {}",
@@ -147,6 +150,7 @@ impl Type {
             Type::Bool => 1,
             Type::Unit => 0,
             Type::Char => 1,
+            Type::Raw => 2,
             Type::Ref(_) => 2,
             Type::Array(inner, size) => inner.get_size() * size.unwrap_or(0),
             Type::Fn { .. } => 2,
@@ -171,6 +175,7 @@ fn default_type_env() -> TypeEnv {
     env.insert("bool".to_string(), Type::Bool);
     env.insert("unit".to_string(), Type::Unit);
     env.insert("char".to_string(), Type::Char);
+    env.insert("raw".to_string(), Type::Raw);
     env
 }
 
@@ -424,6 +429,7 @@ impl<'ip> TypeChecker {
             "bool" => Ok(Type::Bool),
             "char" => Ok(Type::Char),
             "unit" | "void" => Ok(Type::Unit),
+            "raw" => Ok(Type::Raw),
             s if s.starts_with("ref ") => {
                 let inner = &s[4..];
                 Ok(Type::Ref(Box::new(self.parse_type_str(inner)?)))
@@ -1239,12 +1245,16 @@ impl<'ip> TypeChecker {
     fn ast_to_type(&self, ast: &AstNode<'ip>) -> CompilerResult<'ip, Type> {
         match &ast.kind {
             AstKind::Identifier(_) => {
-                if let Some(t) = self.type_env.get(ast.get_span().get_str()) {
+                let span = ast.get_span();
+                let name = span.get_str();
+                // handle @raw (span includes the @ prefix)
+                let lookup_name = name.strip_prefix('@').unwrap_or(name);
+                if let Some(t) = self.type_env.get(lookup_name) {
                     Ok(t.clone())
                 } else {
                     Err(CompilerError::TypeError(
-                        format!("'{}' is not a known type", ast.get_span().get_str()),
-                        ast.get_span(),
+                        format!("'{}' is not a known type", name),
+                        span,
                     ))
                 }
             }
@@ -1295,25 +1305,27 @@ impl<'ip> TypeChecker {
         &mut self,
         ast: &'ip AstNode<'ip>,
         lhs: &'ip AstNode<'ip>,
-        rhs: &'ip Token<'ip>,
+        rhs: &'ip AstNode<'ip>,
     ) -> CompilerResult<'ip, TypedAstNode<'ip>> {
         // Evalute lhs
         let lhs_ty = self.infer_type(lhs)?;
 
-        // Assert rhs
-        let rhs_ty = self
-            .type_env
-            .get(rhs.span.get_str())
-            .ok_or(CompilerError::TypeError(
-                format!("unknown type {}", rhs.span.get_str()),
-                rhs.span.clone(),
-            ))?;
+        // Resolve rhs type from the type annotation AST
+        let rhs_ty = self.ast_to_type(rhs)?;
 
         // match types
-        let eval = match (&lhs_ty.eval_ty, rhs_ty) {
-            (Type::Int, ty @ Type::Char)
-            | (Type::Bool, ty @ Type::Int)
-            | (Type::Char, ty @ Type::Int) => ty.clone(),
+        let eval = match (&lhs_ty.eval_ty, &rhs_ty) {
+            // existing casts
+            (Type::Int, Type::Char)
+            | (Type::Bool, Type::Int)
+            | (Type::Char, Type::Int) => rhs_ty.clone(),
+
+            // @raw -> typed pointer (the only way to use raw pointers)
+            (Type::Raw, ty @ Type::Ref(_)) => ty.clone(),
+
+            // @raw -> int (for inspection)
+            (Type::Raw, Type::Int) => Type::Int,
+
             (a, b) => {
                 return Err(CompilerError::TypeError(
                     format!("cannot cast {} as {}", a.to_string(), b.to_string()),
@@ -1325,7 +1337,7 @@ impl<'ip> TypeChecker {
         Ok(TypedAstNode::new(
             TypedAstKind::As {
                 lhs: Box::new(lhs_ty.clone()),
-                rhs: rhs_ty.clone(),
+                rhs: rhs_ty,
             },
             ast.get_span(),
             eval,
