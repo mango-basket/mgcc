@@ -194,6 +194,7 @@ impl<'a> SemanticChecker<'a> {
             },
             TypedAstKind::Deref(_) => Ok(()),
             TypedAstKind::Disp(_) => Ok(()),
+            TypedAstKind::Free(inner) => self.check(&inner),
             TypedAstKind::Int(_)
             | TypedAstKind::Bool(_)
             | TypedAstKind::Char(_)

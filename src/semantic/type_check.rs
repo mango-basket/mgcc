@@ -429,9 +429,13 @@ impl<'ip> TypeChecker {
             "bool" => Ok(Type::Bool),
             "char" => Ok(Type::Char),
             "unit" | "void" => Ok(Type::Unit),
-            "raw" => Ok(Type::Raw),
+            "raw" | "@raw" => Ok(Type::Raw),
             s if s.starts_with("ref ") => {
                 let inner = &s[4..];
+                Ok(Type::Ref(Box::new(self.parse_type_str(inner)?)))
+            }
+            s if s.starts_with('@') && s.len() > 1 => {
+                let inner = &s[1..];
                 Ok(Type::Ref(Box::new(self.parse_type_str(inner)?)))
             }
             _ => Err(CompilerError::TypeError(format!("unknown type: {}", s), Default::default())),
@@ -583,6 +587,7 @@ impl<'ip> TypeChecker {
             AstKind::Ref(inner) => self.check_ref(ast, inner),
             AstKind::Deref(inner) => self.check_deref(ast, inner),
             AstKind::Disp(inner) => self.check_disp(ast, inner),
+            AstKind::Free(inner) => self.check_free(ast, inner),
             AstKind::Items(items) => self.check_items(ast, items),
             AstKind::Func {
                 is_export,
@@ -814,6 +819,31 @@ impl<'ip> TypeChecker {
             node.get_span(),
             Type::Unit,      // display itself evaluates to unit
             inner_typed.ret, // propagate the return status from the inner expression
+        ))
+    }
+
+    fn check_free(
+        &mut self,
+        node: &'ip AstNode<'ip>,
+        inner: &'ip Box<AstNode<'ip>>,
+    ) -> Result<TypedAstNode<'ip>, CompilerError<'ip>> {
+        let inner_typed = self.infer_type(inner)?;
+
+        if !matches!(inner_typed.eval_ty, Type::Ref(_) | Type::Raw) {
+            return Err(CompilerError::TypeError(
+                format!(
+                    "cannot free {} type, expected a pointer",
+                    inner_typed.eval_ty.to_string()
+                ),
+                inner.get_span(),
+            ));
+        }
+
+        Ok(TypedAstNode::new(
+            TypedAstKind::Free(Box::new(inner_typed.clone())),
+            node.get_span(),
+            Type::Unit,
+            inner_typed.ret,
         ))
     }
 

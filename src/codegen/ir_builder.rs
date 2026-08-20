@@ -548,6 +548,21 @@ impl<'ip> Compiler {
                 instrs.push(Instr::Popr(0));
                 instrs.push(Instr::Int(0)) // prints r0
             }
+            TypedAstKind::Free(inner) => {
+                // free returns void, push return slot
+                instrs.push(Instr::Push(0));
+                // evaluate the pointer expression
+                instrs.extend(self.gen_instrs(&inner)?);
+                // call free_raw (declared in _block_alloc module)
+                instrs.push(Instr::CallLbl("free_raw".to_string()));
+                // caller cleanup: pop 1 argument (2 bytes)
+                instrs.extend([
+                    Instr::Pushr(SP),
+                    Instr::Push(2),
+                    Instr::Add,
+                    Instr::Popr(SP),
+                ]);
+            }
             TypedAstKind::Items(asts) => {
                 for ast in asts {
                     instrs.extend(self.gen_instrs(&ast)?);

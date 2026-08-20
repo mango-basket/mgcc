@@ -541,6 +541,11 @@ impl<'ip> Parser<'ip> {
                     let expr = self.parse_expression()?;
                     Ok(self.gen_node(AstKind::Disp(Box::new(expr))))
                 }
+                TokenKind::Keyword(Keyword::Free) => {
+                    self.bump()?;
+                    let expr = self.parse_expression()?;
+                    Ok(self.gen_node(AstKind::Free(Box::new(expr))))
+                }
                 TokenKind::Identifier(_) | TokenKind::Star => self.parse_reassign(),
                 TokenKind::Keyword(Keyword::Breakpoint) => {
                     self.bump()?;

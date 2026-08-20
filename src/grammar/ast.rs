@@ -61,6 +61,7 @@ pub enum TypedAstKind<'ip> {
     Return(Option<Box<TypedAstNode<'ip>>>),
     Continue,
     Disp(Box<TypedAstNode<'ip>>),
+    Free(Box<TypedAstNode<'ip>>),
     FuncCall {
         name: Token<'ip>,
         args: Vec<TypedAstNode<'ip>>,
@@ -326,6 +327,7 @@ pub enum AstKind<'ip> {
     Return(Option<Box<AstNode<'ip>>>),
     Continue,
     Disp(Box<AstNode<'ip>>),
+    Free(Box<AstNode<'ip>>),
     FuncCall {
         name: Token<'ip>,
         args: Vec<AstNode<'ip>>,
@@ -370,6 +372,7 @@ impl<'ip> TypedAstKind<'ip> {
             Return(_) => false,
             Continue => false,
             Disp(_) => false,
+            Free(_) => false,
             FuncCall { .. } => false,
             As { .. } => false,
             ArrayDef { .. } => false,
